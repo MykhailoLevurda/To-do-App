@@ -16,7 +16,10 @@ export default defineNuxtPlugin((nuxtApp) => {
   let socket: WS | null = null;
   let reconnectTimer: number | undefined;
 
+  const shouldConnect = Boolean(pub.wsEnabled && pub.wsUrl);
+
   function connect() {
+    if (!shouldConnect) return;
     try {
       socket = new WebSocket(pub.wsUrl);
     } catch (e) {
@@ -31,6 +34,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   }
 
   function scheduleReconnect() {
+    if (!shouldConnect) return;
     if (reconnectTimer) return;
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = undefined;

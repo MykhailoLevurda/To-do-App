@@ -10,8 +10,9 @@ export default defineNuxtConfig({
   pinia: { autoImports: ["defineStore"] },
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || "http://localhost:3000/api",
-      wsUrl: process.env.NUXT_PUBLIC_WS_URL || "ws://localhost:3002",
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || "/api",
+      wsUrl: process.env.NUXT_PUBLIC_WS_URL || "",
+      wsEnabled: process.env.NUXT_PUBLIC_WS_ENABLED === "true" || false,
       appName: process.env.NUXT_PUBLIC_APP_NAME || "Scrum Board"
     }
   },
