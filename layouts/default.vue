@@ -8,7 +8,26 @@
       <main class="flex flex-col min-h-screen">
         <header class="flex items-center justify-between px-6 py-3 border-b">
           <div class="font-medium">Welcome</div>
-          <UColorModeButton />
+          <div class="flex items-center gap-2">
+            <UButton
+              icon="i-heroicons-sun"
+              variant="ghost"
+              :color="$colorMode.preference === 'dark' ? 'gray' : 'primary'"
+              @click="$colorMode.preference = 'light'"
+              v-if="$colorMode"
+            >
+              Light
+            </UButton>
+            <UButton
+              icon="i-heroicons-moon"
+              variant="ghost"
+              :color="$colorMode.preference === 'dark' ? 'primary' : 'gray'"
+              @click="$colorMode.preference = 'dark'"
+              v-if="$colorMode"
+            >
+              Dark
+            </UButton>
+          </div>
         </header>
         <div class="p-6">
           <slot />

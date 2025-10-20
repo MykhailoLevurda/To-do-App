@@ -4,7 +4,8 @@ export default defineNuxtConfig({
   modules: [
     "@nuxt/ui",
     "@pinia/nuxt",
-    "@pinia-plugin-persistedstate/nuxt"
+    "@pinia-plugin-persistedstate/nuxt",
+    "@nuxtjs/color-mode"
   ],
   pinia: { autoImports: ["defineStore"] },
   runtimeConfig: {
@@ -26,5 +27,10 @@ export default defineNuxtConfig({
     }
   },
   devtools: { enabled: true },
+  colorMode: {
+    classSuffix: "",
+    preference: "light",
+    fallback: "light"
+  },
   typescript: { strict: true }
 });
