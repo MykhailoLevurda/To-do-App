@@ -15,13 +15,14 @@ import type { TaskItem } from '~/stores/todos';
 
 export const useFirestoreTasks = () => {
   const { $firestore } = useNuxtApp();
+  const firestore = $firestore;
   const auth = useAuth();
   const scrumBoardStore = useScrumBoardStore();
   
   let unsubscribe: Unsubscribe | null = null;
 
   const startListening = () => {
-    if (!$firestore || !auth.isAuthenticated.value) {
+    if (!auth.isAuthenticated.value) {
       console.warn('[Firestore] Cannot start listening - not authenticated');
       return;
     }
@@ -31,7 +32,7 @@ export const useFirestoreTasks = () => {
       unsubscribe();
     }
 
-    const tasksRef = collection($firestore, 'tasks');
+    const tasksRef = collection(firestore, 'tasks');
     const q = query(tasksRef, orderBy('createdAt', 'desc'));
 
     unsubscribe = onSnapshot(q, (snapshot) => {
@@ -67,13 +68,13 @@ export const useFirestoreTasks = () => {
   };
 
   const addTask = async (task: Omit<TaskItem, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (!$firestore || !auth.user.value) {
+    if (!auth.user.value) {
       console.warn('[Firestore] Cannot add task - not authenticated');
       return null;
     }
 
     try {
-      const tasksRef = collection($firestore, 'tasks');
+      const tasksRef = collection(firestore, 'tasks');
       const docRef = await addDoc(tasksRef, {
         ...task,
         createdBy: auth.user.value.uid,
@@ -90,13 +91,13 @@ export const useFirestoreTasks = () => {
   };
 
   const updateTask = async (taskId: string, updates: Partial<TaskItem>) => {
-    if (!$firestore || !auth.user.value) {
+    if (!auth.user.value) {
       console.warn('[Firestore] Cannot update task - not authenticated');
       return false;
     }
 
     try {
-      const taskRef = doc($firestore, 'tasks', taskId);
+      const taskRef = doc(firestore, 'tasks', taskId);
       await updateDoc(taskRef, {
         ...updates,
         updatedAt: serverTimestamp()
@@ -115,13 +116,13 @@ export const useFirestoreTasks = () => {
   };
 
   const deleteTask = async (taskId: string) => {
-    if (!$firestore || !auth.user.value) {
+    if (!auth.user.value) {
       console.warn('[Firestore] Cannot delete task - not authenticated');
       return false;
     }
 
     try {
-      const taskRef = doc($firestore, 'tasks', taskId);
+      const taskRef = doc(firestore, 'tasks', taskId);
       await deleteDoc(taskRef);
 
       console.log('[Firestore] Task deleted:', taskId);
