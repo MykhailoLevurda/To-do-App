@@ -11,10 +11,19 @@ const handleSignOut = async () => {
   <UApp>
     <AuthModal v-model="showAuthModal" />
     <div class="min-h-screen grid grid-cols-[260px_1fr]">
-      <aside class="border-r bg-gray-50 dark:bg-gray-900 p-4">
-        <div class="font-semibold text-xl">{{ $config.public.appName }}</div>
-        <UVerticalNavigation :links="[{ label: 'Dashboard', to: '/' }]" />
-      </aside>
+      <aside class="border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-4 flex flex-col justify-between">
+      <div>
+        <h1 class="font-bold text-lg mb-6">Freelo Dashboard</h1>
+        <nav class="flex flex-col gap-2">
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Scrum Board</button>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Calendar</button>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Notes</button>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Users</button>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Discussions</button>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Activities</button>
+        </nav>
+      </div>
+    </aside>
       <main class="flex flex-col min-h-screen">
         <header class="flex items-center justify-between px-6 py-3 border-b">
           <div class="font-medium">
