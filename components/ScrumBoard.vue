@@ -212,6 +212,8 @@
 import type { TaskItem } from '~/stores/todos';
 
 const scrumBoard = useScrumBoardStore();
+const firestoreTasks = useFirestoreTasks();
+const auth = useAuth();
 
 // Modal states
 const showAddTaskModal = ref(false);
@@ -242,11 +244,16 @@ const statusOptions = [
 ];
 
 // Methods
-function addTask() {
+async function addTask() {
   if (!newTask.value.title) return;
   
+  if (!auth.isAuthenticated.value) {
+    alert('Musíte být přihlášeni pro přidání úkolu');
+    return;
+  }
+  
   // Vždy uložit do "To Do" sloupce při vytvoření
-  scrumBoard.addTask({
+  await firestoreTasks.addTask({
     ...newTask.value,
     status: 'todo'
   });
@@ -269,59 +276,52 @@ function editTask(task: TaskItem) {
   showEditTaskModal.value = true;
 }
 
-function updateTask() {
+async function updateTask() {
   if (!editingTask.value) return;
   
-  scrumBoard.updateTask(editingTask.value.id, editingTask.value);
+  await firestoreTasks.updateTask(editingTask.value.id, editingTask.value);
   showEditTaskModal.value = false;
   editingTask.value = null;
 }
 
-function deleteTask(taskId: string) {
+async function deleteTask(taskId: string) {
   if (confirm('Are you sure you want to delete this task?')) {
-    scrumBoard.removeTask(taskId);
+    await firestoreTasks.deleteTask(taskId);
   }
 }
 
-function moveTask(taskId: string, newStatus: string) {
-  scrumBoard.moveTask(taskId, '', newStatus);
+async function moveTask(taskId: string, newStatus: string) {
+  await firestoreTasks.updateTaskStatus(taskId, newStatus as 'todo' | 'in-progress' | 'done');
 }
 
-function handleDrop(event: DragEvent, targetStatus: string) {
+async function handleDrop(event: DragEvent, targetStatus: string) {
   event.preventDefault();
   
   if (event.dataTransfer) {
     const taskId = event.dataTransfer.getData('text/plain');
-    scrumBoard.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
+    await firestoreTasks.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
   }
 }
 
-// Initialize with sample data if empty
+// Start Firestore listener when component mounts
 onMounted(() => {
-  if (scrumBoard.tasks.length === 0) {
-    scrumBoard.addTask({
-      title: 'Setup project structure',
-      description: 'Create basic Nuxt 3 project with TypeScript',
-      priority: 'high',
-      status: 'done',
-      storyPoints: 5
-    });
-    
-    scrumBoard.addTask({
-      title: 'Implement Scrum Board',
-      description: 'Create Kanban board with drag & drop',
-      priority: 'high',
-      status: 'in-progress',
-      storyPoints: 8
-    });
-    
-    scrumBoard.addTask({
-      title: 'Add user authentication',
-      description: 'Integrate Firebase Auth',
-      priority: 'medium',
-      status: 'todo',
-      storyPoints: 13
-    });
+  if (auth.isAuthenticated.value) {
+    firestoreTasks.startListening();
+  }
+});
+
+// Stop Firestore listener when component unmounts
+onUnmounted(() => {
+  firestoreTasks.stopListening();
+});
+
+// Watch for authentication changes
+watch(() => auth.isAuthenticated.value, (isAuth) => {
+  if (isAuth) {
+    firestoreTasks.startListening();
+  } else {
+    firestoreTasks.stopListening();
+    scrumBoard.tasks = []; // Clear tasks when logged out
   }
 });
 </script>

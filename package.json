@@ -23,6 +23,9 @@
     "@pinia/nuxt": "^0.5.1",
     "@pinia-plugin-persistedstate/nuxt": "^1.2.0",
     "axios": "^1.7.2",
-    "ws": "^8.16.0"
+    "ws": "^8.16.0",
+    "firebase": "^10.8.0",
+    "nuxt-vuefire": "^1.0.2",
+    "vuefire": "^3.1.22"
   }
 }
