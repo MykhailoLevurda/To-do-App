@@ -10,10 +10,7 @@ export default defineNuxtConfig({
   ],
   pinia: { autoImports: ["defineStore"] },
   vuefire: {
-    auth: {
-      enabled: true,
-      sessionCookie: false
-    },
+    auth: false, // Disable server-side auth to avoid firebase-admin dependency
     config: {
       apiKey: process.env.NUXT_PUBLIC_FIREBASE_API_KEY,
       authDomain: process.env.NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
