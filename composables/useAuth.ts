@@ -11,13 +11,16 @@ import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 export const useAuth = () => {
   const { $firebaseAuth, $firestore } = useNuxtApp();
+  const auth = $firebaseAuth;
+  const firestore = $firestore;
+  
   const user = useState<User | null>('firebase-user', () => null);
   const loading = useState('auth-loading', () => true);
   const error = useState<string | null>('auth-error', () => null);
 
   // Initialize auth state listener
-  if (process.client && $firebaseAuth) {
-    onAuthStateChanged($firebaseAuth, async (firebaseUser) => {
+  if (process.client) {
+    onAuthStateChanged(auth, async (firebaseUser) => {
       user.value = firebaseUser;
       loading.value = false;
       
@@ -29,9 +32,7 @@ export const useAuth = () => {
   }
 
   const ensureUserDocument = async (firebaseUser: User) => {
-    if (!$firestore) return;
-    
-    const userRef = doc($firestore, 'users', firebaseUser.uid);
+    const userRef = doc(firestore, 'users', firebaseUser.uid);
     const userDoc = await getDoc(userRef);
     
     if (!userDoc.exists()) {
@@ -54,22 +55,17 @@ export const useAuth = () => {
   };
 
   const signUp = async (email: string, password: string, displayName?: string) => {
-    if (!$firebaseAuth) {
-      error.value = 'Firebase not initialized';
-      return null;
-    }
-    
     try {
       error.value = null;
       const userCredential = await createUserWithEmailAndPassword(
-        $firebaseAuth,
+        auth,
         email,
         password
       );
       
       // Create user document with display name
-      if (displayName && $firestore) {
-        const userRef = doc($firestore, 'users', userCredential.user.uid);
+      if (displayName) {
+        const userRef = doc(firestore, 'users', userCredential.user.uid);
         await setDoc(userRef, {
           uid: userCredential.user.uid,
           email: userCredential.user.email,
@@ -90,15 +86,10 @@ export const useAuth = () => {
   };
 
   const signIn = async (email: string, password: string) => {
-    if (!$firebaseAuth) {
-      error.value = 'Firebase not initialized';
-      return null;
-    }
-    
     try {
       error.value = null;
       const userCredential = await signInWithEmailAndPassword(
-        $firebaseAuth,
+        auth,
         email,
         password
       );
@@ -111,15 +102,10 @@ export const useAuth = () => {
   };
 
   const signInWithGoogle = async () => {
-    if (!$firebaseAuth) {
-      error.value = 'Firebase not initialized';
-      return null;
-    }
-    
     try {
       error.value = null;
       const provider = new GoogleAuthProvider();
-      const userCredential = await signInWithPopup($firebaseAuth, provider);
+      const userCredential = await signInWithPopup(auth, provider);
       return userCredential.user;
     } catch (err: any) {
       error.value = err.message;
@@ -129,14 +115,9 @@ export const useAuth = () => {
   };
 
   const signOut = async () => {
-    if (!$firebaseAuth) {
-      error.value = 'Firebase not initialized';
-      return;
-    }
-    
     try {
       error.value = null;
-      await firebaseSignOut($firebaseAuth);
+      await firebaseSignOut(auth);
       user.value = null;
     } catch (err: any) {
       error.value = err.message;
