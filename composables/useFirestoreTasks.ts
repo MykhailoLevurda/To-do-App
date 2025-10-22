@@ -33,7 +33,7 @@ export const useFirestoreTasks = () => {
     }
 
     const tasksRef = collection(firestore, 'tasks');
-    // Filter tasks by current user
+    // Filter tasks by current user and order by creation date
     const q = query(
       tasksRef, 
       where('createdBy', '==', auth.user.value.uid),
@@ -62,6 +62,20 @@ export const useFirestoreTasks = () => {
       console.log('[Firestore] Tasks synced:', tasks.length);
     }, (error) => {
       console.error('[Firestore] Error listening to tasks:', error);
+      
+      // If it's an index error, provide helpful message
+      if (error.message.includes('index')) {
+        console.error('❌ Firebase composite index required!');
+        console.error('📋 Please create an index with these fields:');
+        console.error('   Collection: tasks');
+        console.error('   Fields: createdBy (Ascending), createdAt (Descending)');
+        
+        // Try to extract the link from error message
+        const linkMatch = error.message.match(/https:\/\/[^\s]+/);
+        if (linkMatch) {
+          console.error('🔗 Create index here:', linkMatch[0]);
+        }
+      }
     });
   };
 
