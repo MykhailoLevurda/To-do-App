@@ -22,7 +22,7 @@ export const useFirestoreTasks = () => {
   let unsubscribe: Unsubscribe | null = null;
 
   const startListening = () => {
-    if (!auth.isAuthenticated.value) {
+    if (!auth.isAuthenticated.value || !auth.user.value) {
       console.warn('[Firestore] Cannot start listening - not authenticated');
       return;
     }
@@ -33,7 +33,12 @@ export const useFirestoreTasks = () => {
     }
 
     const tasksRef = collection(firestore, 'tasks');
-    const q = query(tasksRef, orderBy('createdAt', 'desc'));
+    // Filter tasks by current user
+    const q = query(
+      tasksRef, 
+      where('createdBy', '==', auth.user.value.uid),
+      orderBy('createdAt', 'desc')
+    );
 
     unsubscribe = onSnapshot(q, (snapshot) => {
       const tasks: TaskItem[] = [];

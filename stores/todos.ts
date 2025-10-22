@@ -67,9 +67,13 @@ export const useScrumBoardStore = defineStore("scrumBoard", {
     },
     moveTask(taskId: string, fromStatus: string, toStatus: string) {
       this.updateTaskStatus(taskId, toStatus as 'todo' | 'in-progress' | 'done');
+    },
+    clearTasks() {
+      this.tasks = [];
     }
   },
-  persist: true
+  // Disabled persistence - data comes from Firestore
+  persist: false
 });
 
 // Keep the old store for backward compatibility

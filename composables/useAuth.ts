@@ -117,6 +117,17 @@ export const useAuth = () => {
   const signOut = async () => {
     try {
       error.value = null;
+      
+      // Clear all stores and localStorage before signing out
+      const scrumBoardStore = useScrumBoardStore();
+      scrumBoardStore.$reset();
+      
+      // Clear persisted state from localStorage
+      if (process.client) {
+        localStorage.removeItem('scrumBoard');
+        localStorage.removeItem('todos');
+      }
+      
       await firebaseSignOut(auth);
       user.value = null;
     } catch (err: any) {

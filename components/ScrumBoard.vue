@@ -321,7 +321,17 @@ watch(() => auth.isAuthenticated.value, (isAuth) => {
     firestoreTasks.startListening();
   } else {
     firestoreTasks.stopListening();
-    scrumBoard.tasks = []; // Clear tasks when logged out
+    scrumBoard.clearTasks(); // Clear tasks when logged out
+  }
+});
+
+// Watch for user changes (different user logs in)
+watch(() => auth.user.value?.uid, (newUid, oldUid) => {
+  if (oldUid && newUid && oldUid !== newUid) {
+    // Different user logged in - clear old tasks
+    scrumBoard.clearTasks();
+    firestoreTasks.stopListening();
+    firestoreTasks.startListening();
   }
 });
 </script>
