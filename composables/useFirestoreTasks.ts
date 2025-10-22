@@ -24,11 +24,28 @@ export const useFirestoreTasks = () => {
   const startListening = () => {
     if (!auth.isAuthenticated.value || !auth.user.value) {
       console.warn('[Firestore] Cannot start listening - not authenticated');
+      scrumBoardStore.setLoading(false);
       return;
+    }
+
+    const userId = auth.user.value.uid;
+    console.log('[Firestore] Starting listener for user:', userId);
+
+    // Set current user and check if we need to clear old data
+    scrumBoardStore.setCurrentUserId(userId);
+    
+    // Set loading state (but only if we don't have cached data for this user)
+    if (scrumBoardStore.currentUserId === userId && scrumBoardStore.tasks.length > 0) {
+      console.log('[Firestore] Using cached data while fetching updates');
+      scrumBoardStore.setLoading(false);
+    } else {
+      console.log('[Firestore] No cached data, showing loading state');
+      scrumBoardStore.setLoading(true);
     }
 
     // Stop existing listener if any
     if (unsubscribe) {
+      console.log('[Firestore] Stopping previous listener');
       unsubscribe();
     }
 
@@ -36,12 +53,16 @@ export const useFirestoreTasks = () => {
     // Filter tasks by current user and order by creation date
     const q = query(
       tasksRef, 
-      where('createdBy', '==', auth.user.value.uid),
+      where('createdBy', '==', userId),
       orderBy('createdAt', 'desc')
     );
 
+    console.log('[Firestore] Query created for user:', userId);
+
     unsubscribe = onSnapshot(q, (snapshot) => {
       const tasks: TaskItem[] = [];
+      
+      console.log('[Firestore] Snapshot received, documents:', snapshot.size);
       
       snapshot.forEach((doc) => {
         const data = doc.data();
@@ -59,9 +80,11 @@ export const useFirestoreTasks = () => {
       });
 
       scrumBoardStore.tasks = tasks;
-      console.log('[Firestore] Tasks synced:', tasks.length);
+      scrumBoardStore.setLoading(false);
+      console.log(`[Firestore] ✅ Tasks synced for user ${userId}:`, tasks.length, 'tasks');
     }, (error) => {
-      console.error('[Firestore] Error listening to tasks:', error);
+      console.error('[Firestore] ❌ Error listening to tasks:', error);
+      scrumBoardStore.setLoading(false);
       
       // If it's an index error, provide helpful message
       if (error.message.includes('index')) {

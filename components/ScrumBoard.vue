@@ -42,8 +42,16 @@
       </div>
     </div>
 
+    <!-- Loading State -->
+    <div v-if="scrumBoard.isLoading" class="flex items-center justify-center py-20">
+      <div class="text-center">
+        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+        <p class="text-gray-500">Načítám úkoly...</p>
+      </div>
+    </div>
+
     <!-- Kanban Board -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div
         v-for="column in scrumBoard.columns"
         :key="column.id"
@@ -305,6 +313,7 @@ async function handleDrop(event: DragEvent, targetStatus: string) {
 
 // Start Firestore listener when component mounts
 onMounted(() => {
+  console.log('[ScrumBoard] Component mounted, auth status:', auth.isAuthenticated.value);
   if (auth.isAuthenticated.value) {
     firestoreTasks.startListening();
   }
@@ -312,23 +321,29 @@ onMounted(() => {
 
 // Stop Firestore listener when component unmounts
 onUnmounted(() => {
+  console.log('[ScrumBoard] Component unmounting, stopping listener');
   firestoreTasks.stopListening();
 });
 
 // Watch for authentication changes
-watch(() => auth.isAuthenticated.value, (isAuth) => {
+watch(() => auth.isAuthenticated.value, (isAuth, wasAuth) => {
+  console.log('[ScrumBoard] Auth changed:', { wasAuth, isAuth, userId: auth.user.value?.uid });
   if (isAuth) {
+    console.log('[ScrumBoard] User logged in, starting listener');
     firestoreTasks.startListening();
   } else {
+    console.log('[ScrumBoard] User logged out, stopping listener and clearing tasks');
     firestoreTasks.stopListening();
-    scrumBoard.clearTasks(); // Clear tasks when logged out
+    scrumBoard.clearTasks();
   }
 });
 
 // Watch for user changes (different user logs in)
 watch(() => auth.user.value?.uid, (newUid, oldUid) => {
+  console.log('[ScrumBoard] User UID changed:', { oldUid, newUid });
   if (oldUid && newUid && oldUid !== newUid) {
-    // Different user logged in - clear old tasks
+    console.log('[ScrumBoard] Different user detected, switching context');
+    // Different user logged in - clear old tasks and restart listener
     scrumBoard.clearTasks();
     firestoreTasks.stopListening();
     firestoreTasks.startListening();

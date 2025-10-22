@@ -20,6 +20,8 @@ export interface ScrumBoardState {
     status: 'todo' | 'in-progress' | 'done';
     color: string;
   }[];
+  isLoading: boolean;
+  currentUserId: string | null;
 }
 
 export const useScrumBoardStore = defineStore("scrumBoard", {
@@ -29,7 +31,9 @@ export const useScrumBoardStore = defineStore("scrumBoard", {
       { id: 'todo', title: 'To Do', status: 'todo', color: 'blue' },
       { id: 'in-progress', title: 'In Progress', status: 'in-progress', color: 'yellow' },
       { id: 'done', title: 'Done', status: 'done', color: 'green' }
-    ]
+    ],
+    isLoading: false,
+    currentUserId: null
   }),
   getters: {
     tasksByStatus: (state) => (status: 'todo' | 'in-progress' | 'done') => 
@@ -70,10 +74,25 @@ export const useScrumBoardStore = defineStore("scrumBoard", {
     },
     clearTasks() {
       this.tasks = [];
+    },
+    setLoading(loading: boolean) {
+      this.isLoading = loading;
+    },
+    setCurrentUserId(userId: string | null) {
+      // If user changed, clear tasks from old user
+      if (this.currentUserId && userId && this.currentUserId !== userId) {
+        this.tasks = [];
+      }
+      this.currentUserId = userId;
     }
   },
-  // Disabled persistence - data comes from Firestore
-  persist: false
+  persist: {
+    // Use dynamic key based on current user
+    key: 'scrumBoard',
+    storage: typeof window !== 'undefined' ? localStorage : undefined,
+    // Only persist tasks, not loading state
+    paths: ['tasks', 'currentUserId']
+  }
 });
 
 // Keep the old store for backward compatibility

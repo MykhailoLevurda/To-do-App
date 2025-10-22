@@ -118,21 +118,20 @@ export const useAuth = () => {
     try {
       error.value = null;
       
-      // Clear all stores and localStorage before signing out
-      const scrumBoardStore = useScrumBoardStore();
-      scrumBoardStore.$reset();
+      console.log('[Auth] Signing out user:', user.value?.uid);
       
-      // Clear persisted state from localStorage
-      if (process.client) {
-        localStorage.removeItem('scrumBoard');
-        localStorage.removeItem('todos');
-      }
+      // Clear all stores before signing out
+      const scrumBoardStore = useScrumBoardStore();
+      scrumBoardStore.clearTasks();
+      scrumBoardStore.setCurrentUserId(null);
       
       await firebaseSignOut(auth);
       user.value = null;
+      
+      console.log('[Auth] User signed out successfully');
     } catch (err: any) {
       error.value = err.message;
-      console.error('Sign out error:', err);
+      console.error('[Auth] Sign out error:', err);
     }
   };
 
