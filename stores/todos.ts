@@ -8,6 +8,7 @@ export interface TaskItem {
   priority: 'low' | 'medium' | 'high';
   assignee?: string;
   storyPoints?: number;
+  projectId: string;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -5,7 +5,6 @@ import {
   updateDoc,
   deleteDoc,
   query,
-  orderBy,
   onSnapshot,
   serverTimestamp,
   where,
@@ -24,45 +23,23 @@ export const useFirestoreTasks = () => {
   const startListening = () => {
     if (!auth.isAuthenticated.value || !auth.user.value) {
       console.warn('[Firestore] Cannot start listening - not authenticated');
-      scrumBoardStore.setLoading(false);
       return;
-    }
-
-    const userId = auth.user.value.uid;
-    console.log('[Firestore] Starting listener for user:', userId);
-
-    // Set current user and check if we need to clear old data
-    scrumBoardStore.setCurrentUserId(userId);
-    
-    // Set loading state (but only if we don't have cached data for this user)
-    if (scrumBoardStore.currentUserId === userId && scrumBoardStore.tasks.length > 0) {
-      console.log('[Firestore] Using cached data while fetching updates');
-      scrumBoardStore.setLoading(false);
-    } else {
-      console.log('[Firestore] No cached data, showing loading state');
-      scrumBoardStore.setLoading(true);
     }
 
     // Stop existing listener if any
     if (unsubscribe) {
-      console.log('[Firestore] Stopping previous listener');
       unsubscribe();
     }
 
     const tasksRef = collection(firestore, 'tasks');
-    // Filter tasks by current user and order by creation date
+    // Filter tasks by current user (no orderBy to avoid needing composite index)
     const q = query(
       tasksRef, 
-      where('createdBy', '==', userId),
-      orderBy('createdAt', 'desc')
+      where('createdBy', '==', auth.user.value.uid)
     );
-
-    console.log('[Firestore] Query created for user:', userId);
 
     unsubscribe = onSnapshot(q, (snapshot) => {
       const tasks: TaskItem[] = [];
-      
-      console.log('[Firestore] Snapshot received, documents:', snapshot.size);
       
       snapshot.forEach((doc) => {
         const data = doc.data();
@@ -74,31 +51,19 @@ export const useFirestoreTasks = () => {
           priority: data.priority,
           assignee: data.assignee,
           storyPoints: data.storyPoints,
+          projectId: data.projectId,
           createdAt: data.createdAt?.toDate() || new Date(),
           updatedAt: data.updatedAt?.toDate() || new Date()
         });
       });
 
+      // Sort on client side by createdAt descending
+      tasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
       scrumBoardStore.tasks = tasks;
-      scrumBoardStore.setLoading(false);
-      console.log(`[Firestore] ✅ Tasks synced for user ${userId}:`, tasks.length, 'tasks');
+      console.log('[Firestore] Tasks synced:', tasks.length);
     }, (error) => {
-      console.error('[Firestore] ❌ Error listening to tasks:', error);
-      scrumBoardStore.setLoading(false);
-      
-      // If it's an index error, provide helpful message
-      if (error.message.includes('index')) {
-        console.error('❌ Firebase composite index required!');
-        console.error('📋 Please create an index with these fields:');
-        console.error('   Collection: tasks');
-        console.error('   Fields: createdBy (Ascending), createdAt (Descending)');
-        
-        // Try to extract the link from error message
-        const linkMatch = error.message.match(/https:\/\/[^\s]+/);
-        if (linkMatch) {
-          console.error('🔗 Create index here:', linkMatch[0]);
-        }
-      }
+      console.error('[Firestore] Error listening to tasks:', error);
     });
   };
 

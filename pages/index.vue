@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
-// Use the new Scrum Board instead of simple todos
+// Dashboard as the main page
 </script>
 <template>
-  <ScrumBoard />
+  <Dashboard />
 </template>

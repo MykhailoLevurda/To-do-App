@@ -1,0 +1,32 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+   // Tasks collection
+    match /tasks/{taskId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null 
+        && (resource.data.createdBy == request.auth.uid 
+            || request.auth.token.admin == true);
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
+    }
+    
+    // Boards collection
+    match /boards/{boardId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null 
+        && resource.data.members[request.auth.uid] != null;
+    }
+    match /{document=**} {
+      allow read, write: if request.time < timestamp.date(2025, 11, 20);
+    }
+  }
+}

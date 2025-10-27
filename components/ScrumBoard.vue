@@ -15,26 +15,26 @@
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
         <UCard>
           <div class="text-center">
-            <div class="text-2xl font-bold text-blue-600">{{ scrumBoard.totalTasks }}</div>
+            <div class="text-2xl font-bold text-blue-600">{{ projectTasks.length }}</div>
             <div class="text-sm text-gray-500">Total Tasks</div>
           </div>
         </UCard>
         <UCard>
           <div class="text-center">
-            <div class="text-2xl font-bold text-yellow-600">{{ scrumBoard.inProgressTasks }}</div>
+            <div class="text-2xl font-bold text-yellow-600">{{ tasksByStatus('in-progress').length }}</div>
             <div class="text-sm text-gray-500">In Progress</div>
           </div>
         </UCard>
         <UCard>
           <div class="text-center">
-            <div class="text-2xl font-bold text-green-600">{{ scrumBoard.completedTasks }}</div>
+            <div class="text-2xl font-bold text-green-600">{{ tasksByStatus('done').length }}</div>
             <div class="text-sm text-gray-500">Completed</div>
           </div>
         </UCard>
         <UCard>
           <div class="text-center">
             <div class="text-2xl font-bold text-gray-600">
-              {{ Math.round((scrumBoard.completedTasks / Math.max(scrumBoard.totalTasks, 1)) * 100) }}%
+              {{ Math.round((tasksByStatus('done').length / Math.max(projectTasks.length, 1)) * 100) }}%
             </div>
             <div class="text-sm text-gray-500">Progress</div>
           </div>
@@ -70,7 +70,7 @@
                 ></div>
                 <h3 class="font-semibold">{{ column.title }}</h3>
                 <UBadge :color="column.color" variant="soft">
-                  {{ scrumBoard.tasksByStatus(column.status).length }}
+                  {{ tasksByStatus(column.status).length }}
                 </UBadge>
               </div>
             </div>
@@ -78,7 +78,7 @@
 
           <div class="space-y-3 min-h-[400px]">
             <TaskCard
-              v-for="task in scrumBoard.tasksByStatus(column.status)"
+              v-for="task in tasksByStatus(column.status)"
               :key="task.id"
               :task="task"
               @edit="editTask"
@@ -88,7 +88,7 @@
             
             <!-- Empty state -->
             <div 
-              v-if="scrumBoard.tasksByStatus(column.status).length === 0"
+              v-if="tasksByStatus(column.status).length === 0"
               class="text-center text-gray-400 py-8"
             >
               <div class="text-4xl mb-2">📋</div>
@@ -219,9 +219,23 @@
 <script setup lang="ts">
 import type { TaskItem } from '~/stores/todos';
 
+const props = defineProps<{
+  projectId: string;
+}>();
+
 const scrumBoard = useScrumBoardStore();
 const firestoreTasks = useFirestoreTasks();
 const auth = useAuth();
+
+// Filter tasks by project
+const projectTasks = computed(() => {
+  return scrumBoard.tasks.filter(task => task.projectId === props.projectId);
+});
+
+// Override tasksByStatus to filter by project
+const tasksByStatus = (status: 'todo' | 'in-progress' | 'done') => {
+  return projectTasks.value.filter(task => task.status === status);
+};
 
 // Modal states
 const showAddTaskModal = ref(false);
@@ -260,10 +274,11 @@ async function addTask() {
     return;
   }
   
-  // Vždy uložit do "To Do" sloupce při vytvoření
+  // Vždy uložit do "To Do" sloupce při vytvoření s projectId
   await firestoreTasks.addTask({
     ...newTask.value,
-    status: 'todo'
+    status: 'todo',
+    projectId: props.projectId
   });
   
   // Reset form
