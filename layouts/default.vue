@@ -13,14 +13,33 @@ const handleSignOut = async () => {
     <div class="min-h-screen grid grid-cols-[260px_1fr]">
       <aside class="border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-4 flex flex-col justify-between">
       <div>
-        <h1 class="font-bold text-lg mb-6">Freelo Dashboard</h1>
+        <NuxtLink to="/" class="block mb-6">
+          <h1 class="font-bold text-lg hover:text-primary transition-colors cursor-pointer">
+            📊 Freelo Dashboard
+          </h1>
+        </NuxtLink>
         <nav class="flex flex-col gap-2">
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Scrum Board</button>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Calendar</button>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Notes</button>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Users</button>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Discussions</button>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800">Activities</button>
+          <NuxtLink 
+            to="/" 
+            class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+          >
+            📁 Projekty
+          </NuxtLink>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
+            📅 Kalendář (brzy)
+          </button>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
+            📝 Poznámky (brzy)
+          </button>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
+            👥 Uživatelé (brzy)
+          </button>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
+            💬 Diskuze (brzy)
+          </button>
+          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
+            📈 Aktivity (brzy)
+          </button>
         </nav>
       </div>
     </aside>
