@@ -9,26 +9,64 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 
+// Plain user data without Firebase references
+export interface PlainUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+}
+
 export const useAuth = () => {
   const { $firebaseAuth, $firestore } = useNuxtApp();
   const auth = $firebaseAuth;
   const firestore = $firestore;
   
-  const user = useState<User | null>('firebase-user', () => null);
+  // Store plain user data instead of Firebase User object to avoid cross-origin issues
+  const user = useState<PlainUser | null>('firebase-user', () => null);
   const loading = useState('auth-loading', () => true);
   const error = useState<string | null>('auth-error', () => null);
+  const authListenerSet = useState('auth-listener-set', () => false);
 
-  // Initialize auth state listener
-  if (process.client) {
+  console.log('[Auth] useAuth composable initialized, process.client:', process.client);
+
+  // Convert Firebase User to plain object
+  const toPlainUser = (firebaseUser: User | null): PlainUser | null => {
+    if (!firebaseUser) return null;
+    return {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email,
+      displayName: firebaseUser.displayName,
+      photoURL: firebaseUser.photoURL
+    };
+  };
+
+  // Initialize auth state listener (only once)
+  if (process.client && !authListenerSet.value) {
+    console.log('[Auth] Setting up onAuthStateChanged listener (first time)');
+    authListenerSet.value = true;
+    
     onAuthStateChanged(auth, async (firebaseUser) => {
-      user.value = firebaseUser;
+      console.log('[Auth] Auth state changed:', firebaseUser ? `User: ${firebaseUser.uid}` : 'No user');
+      console.log('[Auth] Setting loading to false');
+      
+      // Convert to plain object to avoid Vue reactivity issues with Firebase objects
+      user.value = toPlainUser(firebaseUser);
       loading.value = false;
       
       if (firebaseUser) {
         // Create/update user document in Firestore
         await ensureUserDocument(firebaseUser);
+        console.log('[Auth] User document ensured for:', firebaseUser.uid);
       }
+      
+      console.log('[Auth] Current state - user:', user.value?.uid, 'loading:', loading.value);
     });
+  } else if (process.client) {
+    console.log('[Auth] Auth listener already set, loading value:', loading.value);
+  } else {
+    console.log('[Auth] SSR mode, setting loading to false immediately');
+    loading.value = false;
   }
 
   const ensureUserDocument = async (firebaseUser: User) => {
@@ -77,7 +115,7 @@ export const useAuth = () => {
         });
       }
       
-      return userCredential.user;
+      return toPlainUser(userCredential.user);
     } catch (err: any) {
       error.value = err.message;
       console.error('Sign up error:', err);
@@ -93,7 +131,7 @@ export const useAuth = () => {
         email,
         password
       );
-      return userCredential.user;
+      return toPlainUser(userCredential.user);
     } catch (err: any) {
       error.value = err.message;
       console.error('Sign in error:', err);
@@ -106,7 +144,7 @@ export const useAuth = () => {
       error.value = null;
       const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
-      return userCredential.user;
+      return toPlainUser(userCredential.user);
     } catch (err: any) {
       error.value = err.message;
       console.error('Google sign in error:', err);
@@ -122,8 +160,19 @@ export const useAuth = () => {
       
       // Clear all stores before signing out
       const scrumBoardStore = useScrumBoardStore();
+      const projectsStore = useProjectsStore();
+      
       scrumBoardStore.clearTasks();
       scrumBoardStore.setCurrentUserId(null);
+      
+      projectsStore.clearProjects();
+      projectsStore.setCurrentUserId(null);
+      
+      // Clear manual caches
+      if (process.client) {
+        localStorage.removeItem('projects-cache');
+        localStorage.removeItem('tasks-cache');
+      }
       
       await firebaseSignOut(auth);
       user.value = null;

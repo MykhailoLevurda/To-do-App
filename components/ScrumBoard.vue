@@ -269,7 +269,7 @@ const statusOptions = [
 async function addTask() {
   if (!newTask.value.title) return;
   
-  if (!auth.isAuthenticated.value) {
+  if (!auth.isAuthenticated) {
     alert('Musíte být přihlášeni pro přidání úkolu');
     return;
   }
@@ -328,8 +328,8 @@ async function handleDrop(event: DragEvent, targetStatus: string) {
 
 // Start Firestore listener when component mounts
 onMounted(() => {
-  console.log('[ScrumBoard] Component mounted, auth status:', auth.isAuthenticated.value);
-  if (auth.isAuthenticated.value) {
+  console.log('[ScrumBoard] Component mounted, auth status:', auth.isAuthenticated);
+  if (auth.isAuthenticated) {
     firestoreTasks.startListening();
   }
 });
@@ -341,7 +341,7 @@ onUnmounted(() => {
 });
 
 // Watch for authentication changes
-watch(() => auth.isAuthenticated.value, (isAuth, wasAuth) => {
+watch(() => auth.isAuthenticated, (isAuth, wasAuth) => {
   console.log('[ScrumBoard] Auth changed:', { wasAuth, isAuth, userId: auth.user.value?.uid });
   if (isAuth) {
     console.log('[ScrumBoard] User logged in, starting listener');

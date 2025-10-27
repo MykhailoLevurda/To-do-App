@@ -116,9 +116,12 @@ const dropdownItems = computed(() => {
 });
 
 // Format date
-function formatDate(date: Date): string {
+function formatDate(date: Date | string): string {
+  // Convert string to Date if needed (happens when loading from localStorage)
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  
   const now = new Date();
-  const diff = now.getTime() - date.getTime();
+  const diff = now.getTime() - dateObj.getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
   
   if (days === 0) return 'Dnes';
@@ -127,7 +130,7 @@ function formatDate(date: Date): string {
   if (days < 30) return `Před ${Math.floor(days / 7)} týdny`;
   if (days < 365) return `Před ${Math.floor(days / 30)} měsíci`;
   
-  return date.toLocaleDateString('cs-CZ');
+  return dateObj.toLocaleDateString('cs-CZ');
 }
 </script>
 

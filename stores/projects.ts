@@ -5,13 +5,15 @@ export interface ProjectsState {
   projects: Project[];
   currentProject: Project | null;
   isLoading: boolean;
+  currentUserId: string | null;
 }
 
 export const useProjectsStore = defineStore("projects", {
   state: (): ProjectsState => ({
     projects: [],
     currentProject: null,
-    isLoading: false
+    isLoading: false,
+    currentUserId: null
   }),
   getters: {
     activeProjects: (state) => 
@@ -45,15 +47,20 @@ export const useProjectsStore = defineStore("projects", {
     setLoading(loading: boolean) {
       this.isLoading = loading;
     },
+    setCurrentUserId(userId: string | null) {
+      // If user changed, clear projects from old user
+      if (this.currentUserId && userId && this.currentUserId !== userId) {
+        this.projects = [];
+        this.currentProject = null;
+      }
+      this.currentUserId = userId;
+    },
     clearProjects() {
       this.projects = [];
       this.currentProject = null;
     }
   },
-  persist: {
-    key: 'projects',
-    storage: typeof window !== 'undefined' ? localStorage : undefined,
-    paths: ['projects', 'currentProject']
-  }
+  // Disable automatic persistence to avoid Vue reactivity issues with cross-origin objects
+  persist: false
 });
 

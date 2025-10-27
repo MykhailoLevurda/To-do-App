@@ -21,7 +21,7 @@ export const useFirestoreProjects = () => {
   let unsubscribe: Unsubscribe | null = null;
 
   const startListening = () => {
-    if (!auth.isAuthenticated.value || !auth.user.value) {
+    if (!auth.isAuthenticated || !auth.user.value) {
       console.warn('[Firestore Projects] Cannot start listening - not authenticated');
       projectsStore.setLoading(false);
       return;
@@ -30,7 +30,41 @@ export const useFirestoreProjects = () => {
     const userId = auth.user.value.uid;
     console.log('[Firestore Projects] Starting listener for user:', userId);
 
-    projectsStore.setLoading(true);
+    // Set current user and check if we need to clear old data
+    projectsStore.setCurrentUserId(userId);
+    
+    // Try to load from manual cache
+    let hasCachedData = false;
+    if (process.client) {
+      try {
+        const cached = localStorage.getItem('projects-cache');
+        if (cached) {
+          const cacheData = JSON.parse(cached);
+          if (cacheData.currentUserId === userId && cacheData.projects) {
+            console.log('[Firestore Projects] Loading from manual cache:', cacheData.projects.length, 'projects');
+            // Restore projects from cache with proper Date objects
+            const cachedProjects = cacheData.projects.map((p: any) => ({
+              ...p,
+              createdAt: new Date(p.createdAt),
+              updatedAt: new Date(p.updatedAt)
+            }));
+            projectsStore.setProjects(cachedProjects);
+            hasCachedData = true;
+          }
+        }
+      } catch (e) {
+        console.warn('[Firestore Projects] Failed to load from cache:', e);
+      }
+    }
+    
+    // Set loading state
+    if (hasCachedData) {
+      console.log('[Firestore Projects] Using cached data while fetching updates');
+      projectsStore.setLoading(false);
+    } else {
+      console.log('[Firestore Projects] No cached data, showing loading state');
+      projectsStore.setLoading(true);
+    }
 
     // Stop existing listener if any
     if (unsubscribe) {
@@ -73,6 +107,30 @@ export const useFirestoreProjects = () => {
       projectsStore.setProjects(projects);
       projectsStore.setLoading(false);
       console.log(`[Firestore Projects] ✅ Projects synced for user ${userId}:`, projects.length, 'projects');
+      
+      // Manual cache to localStorage (safe serialization)
+      if (process.client) {
+        try {
+          const cacheData = {
+            projects: projects.map(p => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              color: p.color,
+              createdBy: p.createdBy,
+              status: p.status,
+              taskCount: p.taskCount,
+              createdAt: p.createdAt.toISOString(),
+              updatedAt: p.updatedAt.toISOString()
+            })),
+            currentUserId: userId,
+            cachedAt: new Date().toISOString()
+          };
+          localStorage.setItem('projects-cache', JSON.stringify(cacheData));
+        } catch (e) {
+          console.warn('[Firestore Projects] Failed to cache projects:', e);
+        }
+      }
     }, (error) => {
       console.error('[Firestore Projects] ❌ Error listening to projects:', error);
       projectsStore.setLoading(false);

@@ -291,9 +291,15 @@ async function deleteProject(projectId: string) {
 
 // Lifecycle
 onMounted(() => {
-  console.log('[Dashboard] Component mounted, auth status:', auth.isAuthenticated.value);
-  if (auth.isAuthenticated.value) {
+  console.log('[Dashboard] Component mounted, auth status:', unref(auth.isAuthenticated));
+  console.log('[Dashboard] User:', auth.user.value?.uid);
+  console.log('[Dashboard] Cached projects:', projectsStore.projects.length);
+  
+  if (auth.isAuthenticated && auth.user.value) {
+    console.log('[Dashboard] Starting projects listener on mount');
     firestoreProjects.startListening();
+  } else {
+    console.warn('[Dashboard] Not authenticated on mount, waiting for auth state');
   }
 });
 
@@ -303,13 +309,31 @@ onUnmounted(() => {
 });
 
 // Watch for authentication changes
-watch(() => auth.isAuthenticated.value, (isAuth) => {
-  console.log('[Dashboard] Auth changed:', isAuth);
-  if (isAuth) {
-    firestoreProjects.startListening();
+watch(() => auth.isAuthenticated, (isAuth, wasAuth) => {
+  console.log('[Dashboard] Auth changed:', { wasAuth, isAuth, userId: auth.user.value?.uid });
+  if (isAuth && auth.user.value) {
+    console.log('[Dashboard] User logged in, starting listener');
+    nextTick(() => {
+      firestoreProjects.startListening();
+    });
   } else {
+    console.log('[Dashboard] User logged out, stopping listener and clearing projects');
     firestoreProjects.stopListening();
     projectsStore.clearProjects();
+  }
+});
+
+// Watch for user changes (different user logs in)
+watch(() => auth.user.value?.uid, (newUid, oldUid) => {
+  console.log('[Dashboard] User UID changed:', { oldUid, newUid });
+  if (oldUid && newUid && oldUid !== newUid) {
+    console.log('[Dashboard] Different user detected, switching context');
+    // Different user logged in - clear old projects and restart listener
+    projectsStore.clearProjects();
+    firestoreProjects.stopListening();
+    nextTick(() => {
+      firestoreProjects.startListening();
+    });
   }
 });
 </script>

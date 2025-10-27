@@ -87,13 +87,8 @@ export const useScrumBoardStore = defineStore("scrumBoard", {
       this.currentUserId = userId;
     }
   },
-  persist: {
-    // Use dynamic key based on current user
-    key: 'scrumBoard',
-    storage: typeof window !== 'undefined' ? localStorage : undefined,
-    // Only persist tasks, not loading state
-    paths: ['tasks', 'currentUserId']
-  }
+  // Disable automatic persistence to avoid Vue reactivity issues with cross-origin objects
+  persist: false
 });
 
 // Keep the old store for backward compatibility

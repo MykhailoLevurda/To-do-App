@@ -21,7 +21,7 @@ export const useFirestoreTasks = () => {
   let unsubscribe: Unsubscribe | null = null;
 
   const startListening = () => {
-    if (!auth.isAuthenticated.value || !auth.user.value) {
+    if (!auth.isAuthenticated || !auth.user.value) {
       console.warn('[Firestore] Cannot start listening - not authenticated');
       return;
     }
