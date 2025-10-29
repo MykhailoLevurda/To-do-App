@@ -9,6 +9,7 @@ export interface TaskItem {
   assignee?: string;
   storyPoints?: number;
   projectId: string;
+  dueDate?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

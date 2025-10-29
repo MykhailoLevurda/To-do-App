@@ -139,6 +139,14 @@
             <UInput v-model="newTask.assignee" placeholder="Enter assignee name" />
           </UFormGroup>
 
+          <UFormGroup label="Termín dokončení">
+            <input
+              v-model="newTask.dueDate"
+              type="date"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </UFormGroup>
+
         </UForm>
         <template #footer>
           <div class="flex justify-end gap-2">
@@ -200,6 +208,14 @@
             </UFormGroup>
           </div>
 
+          <UFormGroup label="Termín dokončení">
+            <input
+              v-model="editingTask.dueDate"
+              type="date"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </UFormGroup>
+
         </UForm>
         <template #footer>
           <div class="flex justify-end gap-2">
@@ -249,7 +265,8 @@ const newTask = ref({
   priority: 'medium' as 'low' | 'medium' | 'high',
   assignee: '',
   storyPoints: 0,
-  status: 'todo' as 'todo' | 'in-progress' | 'done'
+  status: 'todo' as 'todo' | 'in-progress' | 'done',
+  dueDate: ''
 });
 
 // Options
@@ -274,12 +291,24 @@ async function addTask() {
     return;
   }
   
-  // Vždy uložit do "To Do" sloupce při vytvoření s projectId
-  await firestoreTasks.addTask({
-    ...newTask.value,
+  // Prepare task data with proper dueDate conversion
+  const taskData: any = {
+    title: newTask.value.title,
+    description: newTask.value.description,
+    priority: newTask.value.priority,
+    assignee: newTask.value.assignee,
+    storyPoints: newTask.value.storyPoints,
     status: 'todo',
     projectId: props.projectId
-  });
+  };
+  
+  // Convert dueDate string to Date if provided
+  if (newTask.value.dueDate) {
+    taskData.dueDate = new Date(newTask.value.dueDate);
+  }
+  
+  // Vždy uložit do "To Do" sloupce při vytvoření s projectId
+  await firestoreTasks.addTask(taskData);
   
   // Reset form
   newTask.value = {
@@ -288,21 +317,36 @@ async function addTask() {
     priority: 'medium',
     assignee: '',
     storyPoints: 0,
-    status: 'todo'
+    status: 'todo',
+    dueDate: ''
   };
   
   showAddTaskModal.value = false;
 }
 
 function editTask(task: TaskItem) {
-  editingTask.value = { ...task };
+  // Convert Date to string for the HTML date input
+  const taskCopy: any = { ...task };
+  if (task.dueDate) {
+    const date = new Date(task.dueDate);
+    taskCopy.dueDate = date.toISOString().split('T')[0];
+  }
+  editingTask.value = taskCopy;
   showEditTaskModal.value = true;
 }
 
 async function updateTask() {
   if (!editingTask.value) return;
   
-  await firestoreTasks.updateTask(editingTask.value.id, editingTask.value);
+  // Prepare updates with proper dueDate conversion
+  const updates: any = { ...editingTask.value };
+  
+  // Convert dueDate string back to Date if it's a string
+  if (updates.dueDate && typeof updates.dueDate === 'string') {
+    updates.dueDate = new Date(updates.dueDate);
+  }
+  
+  await firestoreTasks.updateTask(editingTask.value.id, updates);
   showEditTaskModal.value = false;
   editingTask.value = null;
 }
