@@ -187,6 +187,7 @@ import type { Project } from '~/types';
 
 const projectsStore = useProjectsStore();
 const firestoreProjects = useFirestoreProjects();
+const firestoreTasks = useFirestoreTasks();
 const auth = useAuth();
 const router = useRouter();
 
@@ -290,7 +291,7 @@ async function deleteProject(projectId: string) {
 }
 
 // Lifecycle
-onMounted(() => {
+onMounted(async () => {
   console.log('[Dashboard] Component mounted, auth status:', unref(auth.isAuthenticated));
   console.log('[Dashboard] User:', auth.user.value?.uid);
   console.log('[Dashboard] Cached projects:', projectsStore.projects.length);
@@ -298,6 +299,10 @@ onMounted(() => {
   if (auth.isAuthenticated && auth.user.value) {
     console.log('[Dashboard] Starting projects listener on mount');
     firestoreProjects.startListening();
+    
+    // Sync task counts to fix any inconsistencies
+    console.log('[Dashboard] Syncing project task counts...');
+    await firestoreTasks.syncProjectTaskCounts();
   } else {
     console.warn('[Dashboard] Not authenticated on mount, waiting for auth state');
   }
@@ -313,8 +318,10 @@ watch(() => auth.isAuthenticated, (isAuth, wasAuth) => {
   console.log('[Dashboard] Auth changed:', { wasAuth, isAuth, userId: auth.user.value?.uid });
   if (isAuth && auth.user.value) {
     console.log('[Dashboard] User logged in, starting listener');
-    nextTick(() => {
+    nextTick(async () => {
       firestoreProjects.startListening();
+      // Sync task counts after login
+      await firestoreTasks.syncProjectTaskCounts();
     });
   } else {
     console.log('[Dashboard] User logged out, stopping listener and clearing projects');
@@ -331,8 +338,10 @@ watch(() => auth.user.value?.uid, (newUid, oldUid) => {
     // Different user logged in - clear old projects and restart listener
     projectsStore.clearProjects();
     firestoreProjects.stopListening();
-    nextTick(() => {
+    nextTick(async () => {
       firestoreProjects.startListening();
+      // Sync task counts for new user
+      await firestoreTasks.syncProjectTaskCounts();
     });
   }
 });

@@ -4,6 +4,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  getDocs,
   query,
   onSnapshot,
   serverTimestamp,
@@ -197,6 +198,20 @@ export const useFirestoreProjects = () => {
     }
 
     try {
+      // First, delete all tasks associated with this project
+      const tasksRef = collection(firestore, 'tasks');
+      const tasksQuery = query(tasksRef, where('projectId', '==', projectId));
+      const tasksSnapshot = await getDocs(tasksQuery);
+      
+      const deleteTaskPromises = [];
+      tasksSnapshot.forEach((taskDoc) => {
+        deleteTaskPromises.push(deleteDoc(taskDoc.ref));
+      });
+      
+      await Promise.all(deleteTaskPromises);
+      console.log('[Firestore Projects] Deleted', deleteTaskPromises.length, 'tasks for project:', projectId);
+      
+      // Then delete the project itself
       const projectRef = doc(firestore, 'projects', projectId);
       await deleteDoc(projectRef);
 

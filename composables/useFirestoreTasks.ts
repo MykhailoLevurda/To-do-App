@@ -4,10 +4,13 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  getDoc,
+  getDocs,
   query,
   onSnapshot,
   serverTimestamp,
   where,
+  increment,
   type Unsubscribe
 } from 'firebase/firestore';
 import type { TaskItem } from '~/stores/todos';
@@ -52,6 +55,7 @@ export const useFirestoreTasks = () => {
           assignee: data.assignee,
           storyPoints: data.storyPoints,
           projectId: data.projectId,
+          dueDate: data.dueDate?.toDate(),
           createdAt: data.createdAt?.toDate() || new Date(),
           updatedAt: data.updatedAt?.toDate() || new Date()
         });
@@ -90,6 +94,17 @@ export const useFirestoreTasks = () => {
       });
 
       console.log('[Firestore] Task added:', docRef.id);
+      
+      // Update project's task count
+      if (task.projectId) {
+        const projectRef = doc(firestore, 'projects', task.projectId);
+        await updateDoc(projectRef, {
+          taskCount: increment(1),
+          updatedAt: serverTimestamp()
+        });
+        console.log('[Firestore] Project task count incremented for:', task.projectId);
+      }
+      
       return docRef.id;
     } catch (error) {
       console.error('[Firestore] Error adding task:', error);
@@ -105,6 +120,34 @@ export const useFirestoreTasks = () => {
 
     try {
       const taskRef = doc(firestore, 'tasks', taskId);
+      
+      // If projectId is being changed, update counts for both projects
+      if (updates.projectId !== undefined) {
+        const taskDoc = await getDoc(taskRef);
+        const oldProjectId = taskDoc.data()?.projectId;
+        const newProjectId = updates.projectId;
+        
+        if (oldProjectId && oldProjectId !== newProjectId) {
+          // Decrement old project
+          const oldProjectRef = doc(firestore, 'projects', oldProjectId);
+          await updateDoc(oldProjectRef, {
+            taskCount: increment(-1),
+            updatedAt: serverTimestamp()
+          });
+          console.log('[Firestore] Task count decremented for old project:', oldProjectId);
+          
+          // Increment new project
+          if (newProjectId) {
+            const newProjectRef = doc(firestore, 'projects', newProjectId);
+            await updateDoc(newProjectRef, {
+              taskCount: increment(1),
+              updatedAt: serverTimestamp()
+            });
+            console.log('[Firestore] Task count incremented for new project:', newProjectId);
+          }
+        }
+      }
+      
       await updateDoc(taskRef, {
         ...updates,
         updatedAt: serverTimestamp()
@@ -130,12 +173,90 @@ export const useFirestoreTasks = () => {
 
     try {
       const taskRef = doc(firestore, 'tasks', taskId);
+      
+      // Get task data first to know which project to update
+      const taskDoc = await getDoc(taskRef);
+      const taskData = taskDoc.data();
+      const projectId = taskData?.projectId;
+      
+      // Delete the task
       await deleteDoc(taskRef);
-
       console.log('[Firestore] Task deleted:', taskId);
+      
+      // Update project's task count
+      if (projectId) {
+        const projectRef = doc(firestore, 'projects', projectId);
+        await updateDoc(projectRef, {
+          taskCount: increment(-1),
+          updatedAt: serverTimestamp()
+        });
+        console.log('[Firestore] Project task count decremented for:', projectId);
+      }
+      
       return true;
     } catch (error) {
       console.error('[Firestore] Error deleting task:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Synchronizes task counts for all projects based on actual task data
+   * Useful for fixing incorrect counts from old data
+   */
+  const syncProjectTaskCounts = async () => {
+    if (!auth.user.value) {
+      console.warn('[Firestore] Cannot sync task counts - not authenticated');
+      return false;
+    }
+
+    try {
+      const userId = auth.user.value.uid;
+      
+      // Get all projects for current user
+      const projectsRef = collection(firestore, 'projects');
+      const projectsQuery = query(projectsRef, where('createdBy', '==', userId));
+      const projectsSnapshot = await getDocs(projectsQuery);
+      
+      // Get all tasks for current user
+      const tasksRef = collection(firestore, 'tasks');
+      const tasksQuery = query(tasksRef, where('createdBy', '==', userId));
+      const tasksSnapshot = await getDocs(tasksQuery);
+      
+      // Count tasks per project
+      const taskCountsByProject: Record<string, number> = {};
+      tasksSnapshot.forEach((doc) => {
+        const data = doc.data();
+        const projectId = data.projectId;
+        if (projectId) {
+          taskCountsByProject[projectId] = (taskCountsByProject[projectId] || 0) + 1;
+        }
+      });
+      
+      // Update each project with correct count
+      const updatePromises = [];
+      projectsSnapshot.forEach((doc) => {
+        const projectId = doc.id;
+        const correctCount = taskCountsByProject[projectId] || 0;
+        const currentCount = doc.data().taskCount || 0;
+        
+        if (correctCount !== currentCount) {
+          console.log(`[Firestore] Syncing project ${projectId}: ${currentCount} -> ${correctCount}`);
+          const projectRef = doc.ref;
+          updatePromises.push(
+            updateDoc(projectRef, {
+              taskCount: correctCount,
+              updatedAt: serverTimestamp()
+            })
+          );
+        }
+      });
+      
+      await Promise.all(updatePromises);
+      console.log('[Firestore] Task count sync completed:', updatePromises.length, 'projects updated');
+      return true;
+    } catch (error) {
+      console.error('[Firestore] Error syncing task counts:', error);
       return false;
     }
   };
@@ -146,6 +267,7 @@ export const useFirestoreTasks = () => {
     addTask,
     updateTask,
     updateTaskStatus,
-    deleteTask
+    deleteTask,
+    syncProjectTaskCounts
   };
 };
