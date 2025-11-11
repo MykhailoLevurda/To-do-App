@@ -68,7 +68,7 @@ const handleSignOut = async () => {
       </div>
     </aside>
       <main class="flex flex-col min-h-screen">
-        <header class="flex items-center justify-between px-6 py-3 border-b">
+        <header class="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-800">
           <div class="font-medium">
             <span v-if="auth.user.value">
               Vítejte, {{ auth.user.value.displayName || auth.user.value.email }}
