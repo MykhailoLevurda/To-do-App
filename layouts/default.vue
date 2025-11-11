@@ -1,10 +1,19 @@
 ﻿<script setup lang="ts">
-const auth = useAuth();
-const showAuthModal = ref(false);
+import {
+  FolderIcon,
+  CalendarIcon,
+  UsersIcon,
+  ChatBubbleLeftIcon,
+  ChartBarIcon,
+  PencilSquareIcon,
+} from '@heroicons/vue/24/outline'
+
+const auth = useAuth()
+const showAuthModal = ref(false)
 
 const handleSignOut = async () => {
-  await auth.signOut();
-};
+  await auth.signOut()
+}
 </script>
 
 <template>
@@ -15,35 +24,47 @@ const handleSignOut = async () => {
       <div>
         <NuxtLink to="/" class="block mb-6">
           <h1 class="font-bold text-lg hover:text-primary transition-colors cursor-pointer">
-            📊 Freelo Dashboard
+            Freelo Dashboard
           </h1>
         </NuxtLink>
-        <nav v-if="auth.user.value" class="flex flex-col gap-2">
-          <NuxtLink 
-            to="/" 
-            class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
-          >
-            📁 Projekty
-          </NuxtLink>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
-            📅 Kalendář (brzy)
-          </button>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
-            📝 Poznámky (brzy)
-          </button>
-          <NuxtLink 
-            to="/users" 
-            class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
-          >
-            👥 Uživatelé
-          </NuxtLink>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
-            💬 Diskuze (brzy)
-          </button>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
-            📈 Aktivity (brzy)
-          </button>
-        </nav>
+          <nav v-if="auth.user.value" class="flex flex-col gap-2">
+            <NuxtLink 
+              to="/" 
+              class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+            >
+              <FolderIcon class="w-5 h-5" />
+              Projekty
+            </NuxtLink>
+
+            <button class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
+              <CalendarIcon class="w-5 h-5" />
+              Kalendář (brzy)
+            </button>
+
+            <button class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
+              <PencilSquareIcon class="w-5 h-5" />
+              Poznámky (brzy)
+            </button>
+
+            <NuxtLink 
+              to="/users" 
+              class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+            >
+              <UsersIcon class="w-5 h-5" />
+              Uživatelé
+            </NuxtLink>
+
+            <button class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
+              <ChatBubbleLeftIcon class="w-5 h-5" />
+              Diskuze (brzy)
+            </button>
+
+            <button class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
+              <ChartBarIcon class="w-5 h-5" />
+              Aktivity (brzy)
+            </button>
+          </nav>
+
       </div>
     </aside>
       <main class="flex flex-col min-h-screen">

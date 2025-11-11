@@ -50,13 +50,16 @@
       </div>
       
       <div class="flex items-center justify-between text-xs">
-        <div class="flex items-center gap-2">
-          <span v-if="task.assignee" class="text-gray-500">
-            👤 {{ task.assignee }}
-          </span>
-          <span v-if="task.storyPoints" class="text-gray-500">
-            📊 {{ task.storyPoints }} pts
-          </span>
+        <div class="flex items-center gap-4">
+          <div v-if="task.assignee" class="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+            <UserIcon class="w-4 h-4 text-gray-700 dark:text-gray-300" />
+            <span>{{ task.assignee }}</span>
+          </div>
+
+          <div v-if="task.storyPoints" class="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+            <ChartBarIcon class="w-4 h-4 text-gray-700 dark:text-gray-300" />
+            <span>{{ task.storyPoints }} pts</span>
+          </div>
         </div>
         <span class="text-gray-400">
           {{ formatDate(task.createdAt) }}
@@ -86,6 +89,7 @@
 
 <script setup lang="ts">
 import type { TaskItem } from '~/stores/todos';
+import { UserIcon, ChartBarIcon  } from '@heroicons/vue/24/solid'
 
 interface Props {
   task: TaskItem;

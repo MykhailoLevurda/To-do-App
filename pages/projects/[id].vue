@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { FolderIcon } from '@heroicons/vue/24/solid'
+
 const route = useRoute();
 const router = useRouter();
 const projectsStore = useProjectsStore();
@@ -36,7 +38,7 @@ watch(currentProject, (project) => {
           class="w-10 h-10 rounded-lg flex items-center justify-center text-white"
           :style="{ backgroundColor: currentProject.color }"
         >
-          📁
+        <FolderIcon class="w-5 h-5 text-white" />
         </div>
         <div>
           <h1 class="text-2xl font-bold">{{ currentProject.name }}</h1>

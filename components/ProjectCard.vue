@@ -9,7 +9,7 @@
         class="w-16 h-16 rounded-lg flex items-center justify-center text-white text-2xl"
         :style="{ backgroundColor: project.color }"
       >
-        📁
+      <FolderIcon class="w-10 h-10 text-white" />
       </div>
 
       <!-- Project info -->
@@ -68,6 +68,8 @@
 
 <script setup lang="ts">
 import type { Project } from '~/types';
+import { FolderIcon } from '@heroicons/vue/24/solid'
+
 
 const props = defineProps<{
   project: Project;

@@ -89,9 +89,9 @@
             <!-- Empty state -->
             <div 
               v-if="tasksByStatus(column.status).length === 0"
-              class="text-center text-gray-400 py-8"
+              class="text-center text-gray-500 dark:text-gray-400 py-8"
             >
-              <div class="text-4xl mb-2">📋</div>
+                <ClipboardDocumentListIcon class="w-12 h-12 mx-auto mb-2 text-gray-400 dark:text-gray-300" />
               <p>No tasks in this column</p>
             </div>
           </div>
@@ -234,6 +234,7 @@
 
 <script setup lang="ts">
 import type { TaskItem } from '~/stores/todos';
+import { ClipboardDocumentListIcon } from '@heroicons/vue/24/outline'
 
 const props = defineProps<{
   projectId: string;

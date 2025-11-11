@@ -88,7 +88,7 @@
         v-if="usersList.length === 0"
         class="text-center py-20"
       >
-        <div class="text-6xl mb-4">👥</div>
+        <UsersIcon class="w-16 h-16 mx-auto mb-4 text-gray-700 dark:text-gray-300" />
         <h3 class="text-xl font-semibold mb-2">Žádní uživatelé</h3>
         <p class="text-gray-500 mb-6">Začněte přidáním prvního člena týmu</p>
         <UButton
@@ -142,6 +142,8 @@
 </template>
 
 <script setup lang="ts">
+import { UsersIcon } from '@heroicons/vue/24/solid'
+
 const auth = useAuth();
 const firestoreProjects = useFirestoreProjects();
 
