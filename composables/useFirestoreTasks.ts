@@ -56,6 +56,7 @@ export const useFirestoreTasks = () => {
           storyPoints: data.storyPoints,
           projectId: data.projectId,
           dueDate: data.dueDate?.toDate(),
+          approved: data.approved || false,
           createdAt: data.createdAt?.toDate() || new Date(),
           updatedAt: data.updatedAt?.toDate() || new Date()
         });
@@ -261,6 +262,29 @@ export const useFirestoreTasks = () => {
     }
   };
 
+    const approveTask = async (taskId: string) => {
+      if (!auth.user.value) {
+        console.warn('[Firestore] Cannot approve task - not authenticated');
+        return false;
+      }
+
+      try {
+        const taskRef = doc(firestore, 'tasks', taskId);
+        await updateDoc(taskRef, {
+          approved: true,
+          updatedAt: serverTimestamp()
+        });
+
+        console.log('[Firestore] Task approved:', taskId);
+        return true;
+      } catch (error) {
+        console.error('[Firestore] Error approving task:', error);
+        return false;
+      }
+    };
+
+
+
   return {
     startListening,
     stopListening,
@@ -268,6 +292,7 @@ export const useFirestoreTasks = () => {
     updateTask,
     updateTaskStatus,
     deleteTask,
-    syncProjectTaskCounts
+    syncProjectTaskCounts,
+    approveTask
   };
 };

@@ -1,7 +1,7 @@
 <template>
   <UCard 
     class="task-card cursor-pointer hover:shadow-md transition-shadow"
-    :class="priorityClass"
+    :class="[priorityClass, task.approved ? 'opacity-60 grayscale' : '']"
     @click="openModal"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
@@ -70,46 +70,78 @@
   </UCard>
 
   <!--Modalni okno-->
-    <UModal v-model="showModal" size="lg">
-      <UCard>
-        <template #header>
-          <div class="flex items-center justify-between w-full">
-            <h3 class="font-semibold text-lg text-gray-800 dark:text-gray-100">
-              {{ task.title }}
-            </h3>
-            <UButton 
-              icon="i-heroicons-x-mark" 
-              variant="ghost" 
-              color="gray" 
-              size="sm" 
-              @click="showModal = false" 
-            />
+  <UModal v-model="showModal" size="lg">
+    <UCard>
+      <template #header>
+        <div class="flex items-center justify-between w-full">
+          <h3 class="font-semibold text-lg text-gray-800 dark:text-gray-100">
+            {{ task.title }}
+          </h3>
+          <UButton 
+            icon="i-heroicons-x-mark" 
+            variant="ghost" 
+            color="gray" 
+            size="sm" 
+            @click="showModal = false" 
+          />
+        </div>
+      </template>
+
+      <div class="space-y-5">
+        <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+          {{ task.description || 'Žádný popis k tomuto úkolu.' }}
+        </p>
+
+        <div class="border-t border-gray-200 dark:border-gray-800 pt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+          <p><strong>Priorita:</strong> {{ task.priority }}</p>
+          <p v-if="task.assignee"><strong>Přiřazeno:</strong> {{ task.assignee }}</p>
+          <p v-if="task.dueDate"><strong>Termín:</strong> {{ formatDueDate(task.dueDate) }}</p>
+          <p v-if="task.storyPoints"><strong>Body:</strong> {{ task.storyPoints }}</p>
+          <p><strong>Vytvořeno:</strong> {{ formatDate(task.createdAt) }}</p>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="flex justify-between w-full items-center">
+          <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            <template v-if="task.status === 'done'">
+              <div v-if="task.approved" class="flex items-center gap-1 text-green-600 dark:text-green-400">
+                <CheckCircleIcon class="w-4 h-4" /> Schváleno
+              </div>
+              <div v-else class="flex items-center gap-1 text-yellow-600 dark:text-yellow-400">
+                <ClockIcon class="w-4 h-4" /> Čeká na schválení
+              </div>
+            </template>
           </div>
-        </template>
-
-        <div class="space-y-5">
-          <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-            {{ task.description || 'Žádný popis k tomuto úkolu.' }}
-          </p>
-
-          <div class="border-t border-gray-200 dark:border-gray-800 pt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
-            <p><strong>Priorita:</strong> {{ task.priority }}</p>
-            <p v-if="task.assignee"><strong>Přiřazeno:</strong> {{ task.assignee }}</p>
-            <p v-if="task.dueDate"><strong>Termín:</strong> {{ formatDueDate(task.dueDate) }}</p>
-            <p v-if="task.storyPoints"><strong>Body:</strong> {{ task.storyPoints }}</p>
-            <p><strong>Vytvořeno:</strong> {{ formatDate(task.createdAt) }}</p>
+          <div class="flex gap-2">
+            <UButton
+              v-if="task.status === 'done' && !task.approved"
+              icon="i-heroicons-check-circle"
+              color="green"
+              @click="approveTask"
+            >
+              Schválit
+            </UButton>
+            <UButton
+              v-if="!task.approved"
+              icon="i-heroicons-pencil"
+              @click="editTask"
+            >
+              Upravit
+            </UButton>
+            <UButton
+              icon="i-heroicons-trash"
+              color="red"
+              @click="deleteTask"
+            >
+              Smazat
+            </UButton>
           </div>
         </div>
+      </template>
 
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton variant="soft" @click="showModal = false">Zavřít</UButton>
-            <UButton icon="i-heroicons-pencil" @click="editTask">Upravit</UButton>
-            <UButton icon="i-heroicons-trash" color="red" @click="deleteTask">Smazat</UButton>
-          </div>
-        </template>
-      </UCard>
-    </UModal>
+    </UCard>
+  </UModal>
 
 
   
@@ -118,6 +150,19 @@
 <script setup lang="ts">
 import type { TaskItem } from '~/stores/todos';
 import { UserIcon, ChartBarIcon  } from '@heroicons/vue/24/solid'
+
+const firestoreTasks = useFirestoreTasks()
+
+async function approveTask() {
+  const success = await firestoreTasks.approveTask(props.task.id)
+  if (success) {
+    props.task.approved = true
+    showModal.value = false
+  }
+}
+
+
+
 
 interface Props {
   task: TaskItem;
