@@ -5,6 +5,10 @@ import {
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  updateProfile as firebaseUpdateProfile,
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
   type User
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
@@ -182,6 +186,75 @@ export const useAuth = () => {
     }
   };
 
+  const updateDisplayName = async (displayName: string) => {
+    try {
+      error.value = null;
+      const currentUser = auth.currentUser;
+      
+      if (!currentUser) {
+        throw new Error('Uživatel není přihlášen');
+      }
+
+      // Update Firebase Auth profile
+      await firebaseUpdateProfile(currentUser, {
+        displayName: displayName
+      });
+
+      // Update Firestore user document
+      const userRef = doc(firestore, 'users', currentUser.uid);
+      await setDoc(userRef, {
+        displayName: displayName,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // Update local user state
+      if (user.value) {
+        user.value = {
+          ...user.value,
+          displayName: displayName
+        };
+      }
+
+      console.log('[Auth] Display name updated:', displayName);
+    } catch (err: any) {
+      error.value = err.message;
+      console.error('[Auth] Error updating display name:', err);
+      throw err;
+    }
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    try {
+      error.value = null;
+      const currentUser = auth.currentUser;
+      
+      if (!currentUser) {
+        throw new Error('Uživatel není přihlášen');
+      }
+
+      if (!currentUser.email) {
+        throw new Error('Uživatel nemá email');
+      }
+
+      // Re-authenticate user with current password
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        currentPassword
+      );
+      
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // Update password
+      await updatePassword(currentUser, newPassword);
+
+      console.log('[Auth] Password changed successfully');
+    } catch (err: any) {
+      error.value = err.message;
+      console.error('[Auth] Error changing password:', err);
+      throw err;
+    }
+  };
+
   const generateUserColor = (): string => {
     const colors = [
       '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -199,6 +272,8 @@ export const useAuth = () => {
     signIn,
     signInWithGoogle,
     signOut,
+    updateDisplayName,
+    changePassword,
     isAuthenticated: computed(() => !!user.value)
   };
 };

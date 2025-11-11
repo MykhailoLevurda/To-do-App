@@ -10,6 +10,7 @@ import {
 
 const auth = useAuth()
 const showAuthModal = ref(false)
+const showUserProfileModal = ref(false)
 
 const handleSignOut = async () => {
   await auth.signOut()
@@ -19,6 +20,7 @@ const handleSignOut = async () => {
 <template>
   <UApp>
     <AuthModal v-model="showAuthModal" />
+    <UserProfileModal v-model="showUserProfileModal" />
     <div class="min-h-screen grid grid-cols-[260px_1fr]">
       <aside class="border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-4 flex flex-col justify-between">
       <div>
@@ -76,6 +78,16 @@ const handleSignOut = async () => {
             <span v-else>Welcome</span>
           </div>
           <div class="flex items-center gap-2">
+            <!-- User Profile Button -->
+            <UButton
+              v-if="auth.user.value"
+              icon="i-heroicons-user-circle"
+              variant="ghost"
+              size="sm"
+              @click="showUserProfileModal = true"
+              :title="auth.user.value.displayName || auth.user.value.email || 'Nastavení uživatele'"
+            />
+            
             <!-- Color Mode Toggle -->
             <UButton
               icon="i-heroicons-sun"
