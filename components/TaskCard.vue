@@ -1,7 +1,8 @@
 <template>
   <UCard 
-    class="task-card cursor-move hover:shadow-md transition-shadow"
+    class="task-card cursor-pointer hover:shadow-md transition-shadow"
     :class="priorityClass"
+    @click="openModal"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
     draggable="true"
@@ -28,7 +29,7 @@
     </template>
 
     <div class="space-y-2">
-      <p v-if="task.description" class="text-xs text-gray-600 dark:text-gray-400">
+      <p v-if="task.description" class="hidden text-xs text-gray-600 dark:text-gray-400">
         {{ task.description }}
       </p>
       
@@ -66,25 +67,52 @@
         </span>
       </div>
     </div>
-
-    <template #footer>
-      <div class="flex items-center justify-between">
-        <UButton
-          icon="i-heroicons-pencil"
-          size="xs"
-          variant="ghost"
-          @click="editTask"
-        />
-        <UButton
-          icon="i-heroicons-trash"
-          size="xs"
-          variant="ghost"
-          color="red"
-          @click="deleteTask"
-        />
-      </div>
-    </template>
   </UCard>
+
+  <!--Modalni okno-->
+    <UModal v-model="showModal" size="lg">
+      <UCard>
+        <template #header>
+          <div class="flex items-center justify-between w-full">
+            <h3 class="font-semibold text-lg text-gray-800 dark:text-gray-100">
+              {{ task.title }}
+            </h3>
+            <UButton 
+              icon="i-heroicons-x-mark" 
+              variant="ghost" 
+              color="gray" 
+              size="sm" 
+              @click="showModal = false" 
+            />
+          </div>
+        </template>
+
+        <div class="space-y-5">
+          <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+            {{ task.description || 'Žádný popis k tomuto úkolu.' }}
+          </p>
+
+          <div class="border-t border-gray-200 dark:border-gray-800 pt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+            <p><strong>Priorita:</strong> {{ task.priority }}</p>
+            <p v-if="task.assignee"><strong>Přiřazeno:</strong> {{ task.assignee }}</p>
+            <p v-if="task.dueDate"><strong>Termín:</strong> {{ formatDueDate(task.dueDate) }}</p>
+            <p v-if="task.storyPoints"><strong>Body:</strong> {{ task.storyPoints }}</p>
+            <p><strong>Vytvořeno:</strong> {{ formatDate(task.createdAt) }}</p>
+          </div>
+        </div>
+
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="soft" @click="showModal = false">Zavřít</UButton>
+            <UButton icon="i-heroicons-pencil" @click="editTask">Upravit</UButton>
+            <UButton icon="i-heroicons-trash" color="red" @click="deleteTask">Smazat</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+
+  
 </template>
 
 <script setup lang="ts">
@@ -103,6 +131,8 @@ const emit = defineEmits<{
 }>();
 
 const scrumBoard = useScrumBoardStore();
+const showModal = ref(false)
+const openModal = () => (showModal.value = true)
 
 const priorityClass = computed(() => {
   switch (props.task.priority) {
@@ -273,10 +303,12 @@ function handleDragEnd() {
 }
 
 function editTask() {
+  showModal.value = false
   emit('edit', props.task);
 }
 
 function deleteTask() {
+  showModal.value = false
   emit('delete', props.task.id);
 }
 
