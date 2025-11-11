@@ -15,6 +15,31 @@ const showUserProfileModal = ref(false)
 const handleSignOut = async () => {
   await auth.signOut()
 }
+
+// User menu dropdown items
+const userMenuItems = computed(() => {
+  if (!auth.user.value) return []
+  
+  return [
+    [
+      {
+        label: 'Nastavení profilu',
+        icon: 'i-heroicons-cog-6-tooth',
+        click: () => {
+          showUserProfileModal.value = true
+        }
+      }
+    ],
+    [
+      {
+        label: 'Odhlásit se',
+        icon: 'i-heroicons-arrow-left-on-rectangle',
+        click: handleSignOut,
+        class: 'text-red-600 dark:text-red-400'
+      }
+    ]
+  ]
+})
 </script>
 
 <template>
@@ -78,32 +103,14 @@ const handleSignOut = async () => {
             <span v-else>Welcome</span>
           </div>
           <div class="flex items-center gap-2">
-            <!-- User Profile Button -->
-            <UButton
-              v-if="auth.user.value"
-              icon="i-heroicons-user-circle"
-              variant="ghost"
-              size="sm"
-              @click="showUserProfileModal = true"
-              :title="auth.user.value.displayName || auth.user.value.email || 'Nastavení uživatele'"
-            />
-            
             <!-- Color Mode Toggle -->
             <UButton
-              icon="i-heroicons-sun"
+              :icon="$colorMode.preference === 'dark' ? 'i-heroicons-sun' : 'i-heroicons-moon'"
               variant="ghost"
               size="sm"
-              :color="$colorMode.preference === 'dark' ? 'gray' : 'primary'"
-              @click="$colorMode.preference = 'light'"
+              @click="$colorMode.preference = $colorMode.preference === 'dark' ? 'light' : 'dark'"
               v-if="$colorMode"
-            />
-            <UButton
-              icon="i-heroicons-moon"
-              variant="ghost"
-              size="sm"
-              :color="$colorMode.preference === 'dark' ? 'primary' : 'gray'"
-              @click="$colorMode.preference = 'dark'"
-              v-if="$colorMode"
+              :title="$colorMode.preference === 'dark' ? 'Přepnout na světlý režim' : 'Přepnout na tmavý režim'"
             />
             
             <!-- Auth Buttons -->
@@ -114,15 +121,20 @@ const handleSignOut = async () => {
             >
               Přihlásit se
             </UButton>
-            <UButton
-              v-else
-              icon="i-heroicons-arrow-left-on-rectangle"
-              color="red"
-              variant="soft"
-              @click="handleSignOut"
+            
+            <!-- User Profile Dropdown -->
+            <UDropdown
+              v-if="auth.user.value"
+              :items="userMenuItems"
+              :popper="{ placement: 'bottom-end' }"
             >
-              Odhlásit se
-            </UButton>
+              <UButton
+                icon="i-heroicons-user-circle"
+                variant="ghost"
+                size="sm"
+                :title="auth.user.value.displayName || auth.user.value.email || 'Nastavení uživatele'"
+              />
+            </UDropdown>
           </div>
         </header>
         <div class="p-6">
