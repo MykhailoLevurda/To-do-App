@@ -18,7 +18,7 @@ const handleSignOut = async () => {
             📊 Freelo Dashboard
           </h1>
         </NuxtLink>
-        <nav class="flex flex-col gap-2">
+        <nav v-if="auth.user.value" class="flex flex-col gap-2">
           <NuxtLink 
             to="/" 
             class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
