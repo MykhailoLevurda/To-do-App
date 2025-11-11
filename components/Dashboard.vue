@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard">
+  <div v-if="auth.isAuthenticated && auth.user.value" class="dashboard">
     <!-- Header -->
     <div class="mb-6">
       <div class="flex items-center justify-between">
@@ -10,7 +10,7 @@
         <UButton
           icon="i-heroicons-plus"
           size="lg"
-          @click="showAddProjectModal = true"
+          @click="handleNewProjectClick"
         >
           Nový Projekt
         </UButton>
@@ -108,7 +108,7 @@
         <p class="text-gray-500 mb-6">Začněte vytvořením prvního projektu</p>
         <UButton
           icon="i-heroicons-plus"
-          @click="showAddProjectModal = true"
+          @click="handleNewProjectClick"
         >
           Vytvořit První Projekt
         </UButton>
@@ -179,6 +179,9 @@
         </template>
       </UCard>
     </UModal>
+
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
   </div>
 </template>
 
@@ -193,7 +196,9 @@ const router = useRouter();
 
 // Modal states
 const showAddProjectModal = ref(false);
+const showAuthModal = ref(false);
 const editingProject = ref<Project | null>(null);
+const pendingProjectCreation = ref(false); // Flag pro otevření modalu po přihlášení
 
 // Form data
 const projectForm = ref({
@@ -223,28 +228,56 @@ const totalTasks = computed(() => {
 });
 
 // Methods
+function handleNewProjectClick() {
+  // Kontrola přihlášení před otevřením modalu
+  if (!auth.isAuthenticated || !auth.user.value) {
+    pendingProjectCreation.value = true; // Označit, že chce vytvořit projekt
+    showAuthModal.value = true;
+    return;
+  }
+  
+  showAddProjectModal.value = true;
+}
+
 async function saveProject() {
   if (!projectForm.value.name) return;
   
-  if (editingProject.value) {
-    // Update existing project
-    await firestoreProjects.updateProject(editingProject.value.id, {
-      name: projectForm.value.name,
-      description: projectForm.value.description,
-      color: projectForm.value.color
-    });
-  } else {
-    // Create new project
-    await firestoreProjects.addProject({
-      name: projectForm.value.name,
-      description: projectForm.value.description,
-      color: projectForm.value.color,
-      status: 'active',
-      createdBy: auth.user.value?.uid || ''
-    });
+  // Kontrola přihlášení před vytvořením projektu
+  if (!auth.isAuthenticated || !auth.user.value) {
+    showAddProjectModal.value = false;
+    showAuthModal.value = true;
+    alert('Pro vytvoření projektu se musíte přihlásit.');
+    return;
   }
   
-  closeProjectModal();
+  try {
+    if (editingProject.value) {
+      // Update existing project
+      await firestoreProjects.updateProject(editingProject.value.id, {
+        name: projectForm.value.name,
+        description: projectForm.value.description,
+        color: projectForm.value.color
+      });
+    } else {
+      // Create new project
+      const result = await firestoreProjects.addProject({
+        name: projectForm.value.name,
+        description: projectForm.value.description,
+        color: projectForm.value.color,
+        status: 'active',
+        createdBy: auth.user.value.uid
+      });
+      
+      if (!result) {
+        throw new Error('Nepodařilo se vytvořit projekt. Zkuste to prosím znovu.');
+      }
+    }
+    
+    closeProjectModal();
+  } catch (error: any) {
+    console.error('[Dashboard] Error saving project:', error);
+    alert(error.message || 'Chyba při ukládání projektu. Zkuste to prosím znovu.');
+  }
 }
 
 function editProject(project: Project) {
@@ -342,6 +375,18 @@ watch(() => auth.user.value?.uid, (newUid, oldUid) => {
       firestoreProjects.startListening();
       // Sync task counts for new user
       await firestoreTasks.syncProjectTaskCounts();
+    });
+  }
+});
+
+// Watch for authentication - otevřít modal pro vytvoření projektu po přihlášení
+watch(() => auth.isAuthenticated, (isAuth) => {
+  if (isAuth && pendingProjectCreation.value) {
+    // Uživatel se přihlásil a chtěl vytvořit projekt
+    pendingProjectCreation.value = false;
+    showAuthModal.value = false;
+    nextTick(() => {
+      showAddProjectModal.value = true;
     });
   }
 });

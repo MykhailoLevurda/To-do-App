@@ -168,7 +168,7 @@ export const useFirestoreProjects = () => {
   const addProject = async (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (!auth.user.value) {
       console.warn('[Firestore Projects] Cannot add project - not authenticated');
-      return null;
+      throw new Error('Pro vytvoření projektu se musíte přihlásit.');
     }
 
     try {
