@@ -31,9 +31,12 @@ const handleSignOut = async () => {
           <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
             📝 Poznámky (brzy)
           </button>
-          <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
-            👥 Uživatelé (brzy)
-          </button>
+          <NuxtLink 
+            to="/users" 
+            class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+          >
+            👥 Uživatelé
+          </NuxtLink>
           <button class="text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
             💬 Diskuze (brzy)
           </button>

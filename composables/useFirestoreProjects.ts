@@ -46,6 +46,10 @@ export const useFirestoreProjects = () => {
             // Restore projects from cache with proper Date objects
             const cachedProjects = cacheData.projects.map((p: any) => ({
               ...p,
+              teamMembers: p.teamMembers?.map((m: any) => ({
+                ...m,
+                addedAt: new Date(m.addedAt)
+              })),
               createdAt: new Date(p.createdAt),
               updatedAt: new Date(p.updatedAt)
             }));
@@ -89,6 +93,16 @@ export const useFirestoreProjects = () => {
       
       snapshot.forEach((doc) => {
         const data = doc.data();
+        
+        // Parse teamMembers array
+        const teamMembers = (data.teamMembers || []).map((member: any) => ({
+          userId: member.userId,
+          email: member.email,
+          displayName: member.displayName,
+          addedAt: member.addedAt?.toDate() || new Date(),
+          addedBy: member.addedBy
+        }));
+        
         projects.push({
           id: doc.id,
           name: data.name,
@@ -97,6 +111,7 @@ export const useFirestoreProjects = () => {
           createdBy: data.createdBy,
           status: data.status || 'active',
           taskCount: data.taskCount || 0,
+          teamMembers,
           createdAt: data.createdAt?.toDate() || new Date(),
           updatedAt: data.updatedAt?.toDate() || new Date()
         });
@@ -121,6 +136,10 @@ export const useFirestoreProjects = () => {
               createdBy: p.createdBy,
               status: p.status,
               taskCount: p.taskCount,
+              teamMembers: p.teamMembers?.map(m => ({
+                ...m,
+                addedAt: m.addedAt.toISOString()
+              })),
               createdAt: p.createdAt.toISOString(),
               updatedAt: p.updatedAt.toISOString()
             })),

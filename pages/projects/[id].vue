@@ -47,6 +47,15 @@ watch(currentProject, (project) => {
       </div>
     </div>
 
+    <!-- Team Members Row -->
+    <div class="mb-6">
+      <TeamMembersRow 
+        :project="currentProject" 
+        @member-added="() => {}"
+        @member-removed="() => {}"
+      />
+    </div>
+
     <!-- Scrum Board for this project -->
     <ScrumBoard :project-id="projectId" />
   </div>
