@@ -62,9 +62,7 @@ export const useAuth = () => {
       
       console.log('[Auth] Current state - user:', user.value?.uid, 'loading:', loading.value);
     });
-  } else if (process.client) {
-    console.log('[Auth] Auth listener already set, loading value:', loading.value);
-  } else {
+  } else if (!process.client) {
     console.log('[Auth] SSR mode, setting loading to false immediately');
     loading.value = false;
   }
