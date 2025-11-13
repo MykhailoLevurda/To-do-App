@@ -88,9 +88,10 @@
       </template>
 
       <div class="space-y-5">
-        <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+        <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap break-words">
           {{ task.description || 'Žádný popis k tomuto úkolu.' }}
         </p>
+
 
         <div class="border-t border-gray-200 dark:border-gray-800 pt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
           <p><strong>Priorita:</strong> {{ task.priority }}</p>
