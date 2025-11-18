@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   where,
   increment,
+  orderBy,
   type Unsubscribe
 } from 'firebase/firestore';
 import type { TaskItem } from '~/stores/todos';
@@ -283,6 +284,55 @@ export const useFirestoreTasks = () => {
       }
     };
 
+    const taskComments = ref<Record<string, any[]>>({})
+    const commentUnsubscribes: Record<string, Unsubscribe | null> = {}
+
+    // přidání nového komentáře
+    const addComment = async (taskId: string, text: string) => {
+      if (!auth.user.value) {
+        console.warn('[Firestore] Cannot add comment - not authenticated')
+        return null
+      }
+
+      try {
+        const commentRef = collection(firestore, 'tasks', taskId, 'comments')
+        await addDoc(commentRef, {
+          text,
+          author: auth.user.value.email || 'Neznámý',
+          userId: auth.user.value.uid,
+          createdAt: serverTimestamp()
+        })
+
+        console.log('[Firestore] Comment added to task:', taskId)
+        return true
+      } catch (error) {
+        console.error('[Firestore] Error adding comment:', error)
+        return false
+      }
+    }
+
+    const listenComments = (taskId: string) => {
+      if (commentUnsubscribes[taskId]) {
+        commentUnsubscribes[taskId]!()
+      }
+
+      const commentsRef = collection(firestore, 'tasks', taskId, 'comments')
+      const q = query(commentsRef, orderBy('createdAt', 'asc'))
+
+      commentUnsubscribes[taskId] = onSnapshot(q, (snapshot) => {
+        taskComments.value[taskId] = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data()
+        }))
+      })
+    }
+
+    const stopListeningComments = (taskId: string) => {
+      if (commentUnsubscribes[taskId]) {
+        commentUnsubscribes[taskId]!()
+        commentUnsubscribes[taskId] = null
+      }
+    }
 
 
   return {
@@ -293,6 +343,10 @@ export const useFirestoreTasks = () => {
     updateTaskStatus,
     deleteTask,
     syncProjectTaskCounts,
-    approveTask
+    approveTask,
+    addComment,
+    listenComments,
+    stopListeningComments,
+    taskComments
   };
 };

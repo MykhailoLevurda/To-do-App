@@ -100,7 +100,6 @@ const userMenuItems = computed(() => {
             <span v-if="auth.user.value">
               Vítejte, {{ auth.user.value.displayName || auth.user.value.email }}
             </span>
-            <span v-else>Welcome</span>
           </div>
           <div class="flex items-center gap-2">
             <!-- Color Mode Toggle -->
