@@ -6,7 +6,7 @@
         <h1 class="text-2xl font-bold">Scrum Board</h1>
         <UButton
           icon="i-heroicons-plus"
-          @click="showAddTaskModal = true"
+          @click="openAddTaskModal"
         >
           Add Task
         </UButton>
@@ -135,8 +135,15 @@
             </UFormGroup>
           </div>
 
-          <UFormGroup label="Assignee">
-            <UInput v-model="newTask.assignee" placeholder="Enter assignee name" />
+          <UFormGroup label="Řešitel">
+            <UInput 
+              v-model="newTask.assignee" 
+              :placeholder="currentUserDisplayName || 'Zadejte jméno řešitele'"
+              :disabled="false"
+            />
+            <p v-if="currentUserDisplayName" class="text-xs text-gray-500 mt-1">
+              Aktuálně přihlášen: {{ currentUserDisplayName }}
+            </p>
           </UFormGroup>
 
           <UFormGroup label="Termín dokončení">
@@ -203,8 +210,11 @@
               />
             </UFormGroup>
 
-            <UFormGroup label="Assignee">
+            <UFormGroup label="Řešitel">
               <UInput v-model="editingTask.assignee" />
+              <p v-if="currentUserDisplayName" class="text-xs text-gray-500 mt-1">
+                Aktuálně přihlášen: {{ currentUserDisplayName }}
+              </p>
             </UFormGroup>
           </div>
 
@@ -283,7 +293,21 @@ const statusOptions = [
   { label: 'Done', value: 'done' }
 ];
 
+// Computed property for current user display name
+const currentUserDisplayName = computed(() => {
+  if (!auth.user.value) return null;
+  return auth.user.value.displayName || auth.user.value.email || null;
+});
+
 // Methods
+function openAddTaskModal() {
+  // Set assignee to current user when opening modal
+  if (auth.user.value) {
+    newTask.value.assignee = auth.user.value.displayName || auth.user.value.email || '';
+  }
+  showAddTaskModal.value = true;
+}
+
 async function addTask() {
   if (!newTask.value.title) return;
   

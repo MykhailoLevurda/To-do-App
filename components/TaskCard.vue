@@ -95,7 +95,7 @@
 
         <div class="border-t border-gray-200 dark:border-gray-800 pt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
           <p><strong>Priorita:</strong> {{ task.priority }}</p>
-          <p v-if="task.assignee"><strong>Přiřazeno:</strong> {{ task.assignee }}</p>
+          <p v-if="task.assignee"><strong>Řešitel:</strong> {{ task.assignee }}</p>
           <p v-if="task.dueDate"><strong>Termín:</strong> {{ formatDueDate(task.dueDate) }}</p>
           <p v-if="task.storyPoints"><strong>Body:</strong> {{ task.storyPoints }}</p>
           <p><strong>Vytvořeno:</strong> {{ formatDate(task.createdAt) }}</p>
