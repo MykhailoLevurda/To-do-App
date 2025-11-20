@@ -22,7 +22,6 @@
             icon="i-heroicons-ellipsis-vertical"
             size="xs"
             variant="ghost"
-            @click="toggleMenu"
           />
         </div>
       </div>
@@ -52,12 +51,12 @@
       <div class="flex items-center justify-between text-xs">
         <div class="flex items-center gap-4">
           <div v-if="task.assignee" class="flex items-center gap-1 text-gray-700 dark:text-gray-300">
-            <UserIcon class="w-4 h-4 text-gray-700 dark:text-gray-300" />
+            <UserIcon class="w-4 h-4" />
             <span>{{ task.assignee }}</span>
           </div>
 
           <div v-if="task.storyPoints" class="flex items-center gap-1 text-gray-700 dark:text-gray-300">
-            <ChartBarIcon class="w-4 h-4 text-gray-700 dark:text-gray-300" />
+            <ChartBarIcon class="w-4 h-4" />
             <span>{{ task.storyPoints }} pts</span>
           </div>
         </div>
@@ -72,9 +71,7 @@
     <UCard>
       <template #header>
         <div class="flex items-center justify-between w-full">
-          <h3 class="font-semibold text-lg text-gray-800 dark:text-gray-100">
-            {{ task.title }}
-          </h3>
+          <h3 class="font-semibold text-lg">{{ task.title }}</h3>
           <UButton 
             icon="i-heroicons-x-mark" 
             variant="ghost" 
@@ -86,11 +83,11 @@
       </template>
 
       <div class="space-y-5">
-        <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap break-words">
+        <p class="text-sm leading-relaxed whitespace-pre-wrap break-words">
           {{ task.description || 'Žádný popis k tomuto úkolu.' }}
         </p>
 
-        <div class="border-t border-gray-200 dark:border-gray-800 pt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+        <div class="border-t pt-3 text-sm space-y-1">
           <p><strong>Priorita:</strong> {{ task.priority }}</p>
           <p v-if="task.assignee"><strong>Řešitel:</strong> {{ task.assignee }}</p>
           <p v-if="task.dueDate"><strong>Termín:</strong> {{ formatDueDate(task.dueDate) }}</p>
@@ -98,8 +95,8 @@
           <p><strong>Vytvořeno:</strong> {{ formatDate(task.createdAt) }}</p>
         </div>
 
-        <div class="mt-6 border-t border-gray-200 dark:border-gray-800 pt-4">
-          <h4 class="font-semibold text-gray-800 dark:text-gray-200 mb-2">Komentáře</h4>
+        <div class="mt-6 border-t pt-4">
+          <h4 class="font-semibold mb-2">Komentáře</h4>
 
           <div v-if="taskComments[task.id]?.length" class="space-y-3">
             <div 
@@ -111,7 +108,28 @@
                 <span>{{ c.author }}</span>
                 <span>{{ new Date(c.createdAt?.toDate?.() || 0).toLocaleString('cs-CZ') }}</span>
               </div>
-              <p class="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{{ c.text }}</p>
+
+              <template v-if="editingCommentId === c.id">
+                <textarea
+                  v-model="editingCommentText"
+                  class="w-full p-2 rounded border"
+                  rows="2"
+                ></textarea>
+
+                <div class="flex gap-2 mt-2">
+                  <UButton size="xs" @click="saveEditedComment(c.id)">Uložit</UButton>
+                  <UButton size="xs" color="gray" @click="cancelEdit()">Zrušit</UButton>
+                </div>
+              </template>
+
+              <template v-else>
+                <p class="whitespace-pre-wrap">{{ c.text }}</p>
+
+                <div class="flex gap-3 mt-2 text-xs text-gray-500">
+                  <button @click="startEdit(c)" class="hover:underline">Upravit</button>
+                  <button @click="removeComment(c.id)" class="hover:underline text-red-500">Smazat</button>
+                </div>
+              </template>
             </div>
           </div>
 
@@ -120,7 +138,7 @@
           <textarea
             v-model="newComment"
             rows="3"
-            class="w-full p-2 border rounded dark:bg-gray-900 dark:border-gray-700 text-sm"
+            class="w-full p-2 border rounded text-sm"
             placeholder="Přidat komentář..."
           ></textarea>
 
@@ -136,12 +154,12 @@
 
       <template #footer>
         <div class="flex justify-between w-full items-center">
-          <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+          <div class="text-xs flex items-center gap-1">
             <template v-if="task.status === 'done'">
-              <div v-if="task.approved" class="flex items-center gap-1 text-green-600 dark:text-green-400">
+              <div v-if="task.approved" class="flex items-center gap-1 text-green-600">
                 <CheckCircleIcon class="w-4 h-4" /> Schváleno
               </div>
-              <div v-else class="flex items-center gap-1 text-yellow-600 dark:text-yellow-400">
+              <div v-else class="flex items-center gap-1 text-yellow-600">
                 <ClockIcon class="w-4 h-4" /> Čeká na schválení
               </div>
             </template>
@@ -181,33 +199,29 @@
 import type { TaskItem } from '~/stores/todos'
 import { UserIcon, ChartBarIcon } from '@heroicons/vue/24/solid'
 
-const firestoreTasks = useFirestoreTasks()
-const { addComment, listenComments, stopListeningComments, taskComments } = useFirestoreTasks()
+const {
+  addComment,
+  listenComments,
+  stopListeningComments,
+  taskComments,
+  deleteComment,
+  updateComment,
+  approveTask: approveTaskFirestore
+} = useFirestoreTasks()
+
+const editingCommentId = ref<string | null>(null)
+const editingCommentText = ref('')
 const newComment = ref('')
 
-async function submitComment() {
-  if (!newComment.value.trim()) return
-  await addComment(props.task.id, newComment.value.trim())
-  newComment.value = ''
-}
-
-async function approveTask() {
-  const success = await firestoreTasks.approveTask(props.task.id)
-  if (success) {
-    props.task.approved = true
-    showModal.value = false
-  }
-}
-
 interface Props {
-  task: TaskItem;
+  task: TaskItem
 }
-
 const props = defineProps<Props>()
+
 const emit = defineEmits<{
-  edit: [task: TaskItem];
-  delete: [taskId: string];
-  move: [taskId: string, newStatus: string];
+  edit: [task: TaskItem]
+  delete: [taskId: string]
+  move: [taskId: string, newStatus: string]
 }>()
 
 const showModal = ref(false)
@@ -217,6 +231,47 @@ watch(showModal, (open) => {
   if (open) listenComments(props.task.id)
   else stopListeningComments(props.task.id)
 })
+
+async function submitComment() {
+  if (!newComment.value.trim()) return
+  await addComment(props.task.id, newComment.value.trim())
+  newComment.value = ''
+}
+
+async function approveTask() {
+  await approveTaskFirestore(props.task.id)
+  showModal.value = false
+}
+
+function editTask() {
+  showModal.value = false
+  emit('edit', props.task)
+}
+
+function deleteTask() {
+  showModal.value = false
+  emit('delete', props.task.id)
+}
+
+function startEdit(c: any) {
+  editingCommentId.value = c.id
+  editingCommentText.value = c.text
+}
+
+function cancelEdit() {
+  editingCommentId.value = null
+  editingCommentText.value = ''
+}
+
+async function saveEditedComment(id: string) {
+  await updateComment(props.task.id, id, editingCommentText.value)
+  editingCommentId.value = null
+  editingCommentText.value = ''
+}
+
+async function removeComment(id: string) {
+  await deleteComment(props.task.id, id)
+}
 
 const priorityClass = computed(() => {
   switch (props.task.priority) {
@@ -239,117 +294,56 @@ const priorityColor = computed(() => {
 function getDaysDifference() {
   if (!props.task.dueDate) return null
   const now = new Date()
-  const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const due = new Date(props.task.dueDate)
-  const dueMidnight = new Date(due.getFullYear(), due.getMonth(), due.getDate())
-  const diffMs = dueMidnight.getTime() - nowMidnight.getTime()
-  return diffMs / (1000 * 60 * 60 * 24)
+  const n = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const d = new Date(props.task.dueDate)
+  const dm = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  return (dm.getTime() - n.getTime()) / 86400000
 }
 
-const deadlineProgress = computed(() => {
-  if (!props.task.dueDate) return 0
-  const now = Date.now()
-  const created = new Date(props.task.createdAt).getTime()
-  const due = new Date(props.task.dueDate).getTime()
-  if (now > due) return 100
-  const total = due - created
-  const elapsed = now - created
-  if (total <= 0) return 100
-  return Math.min(100, Math.max(0, (elapsed / total) * 100))
-})
-
 const deadlineColorName = computed(() => {
-  const diff = getDaysDifference()
-  if (diff === null) return 'gray'
-  if (diff < 0) return 'red'
-  if (diff <= 2) return 'yellow'
+  const d = getDaysDifference()
+  if (d === null) return 'gray'
+  if (d < 0) return 'red'
+  if (d <= 2) return 'yellow'
   return 'blue'
 })
 
-const deadlineBarColorRaw = computed(() => {
-  const map: Record<string, string> = {
-    red: '#ef4444',
-    yellow: '#eab308',
-    blue: '#3b82f6',
-    gray: '#d1d5db'
-  }
-  return map[deadlineColorName.value]
-})
-
-const deadlineTextColor = computed(() => {
-  const map: Record<string, string> = {
-    red: 'text-red-600 font-semibold',
-    yellow: 'text-yellow-600 font-medium',
-    blue: 'text-blue-600',
-    gray: 'text-gray-500'
-  }
-  return map[deadlineColorName.value]
-})
+const deadlineTextColor = computed(() => ({
+  red: 'text-red-600',
+  yellow: 'text-yellow-600',
+  blue: 'text-blue-600',
+  gray: 'text-gray-500'
+}[deadlineColorName.value]))
 
 const deadlineStatus = computed(() => {
-  const diff = getDaysDifference()
-  if (diff === null) return ''
-  const days = Math.ceil(diff)
-  if (diff < 0) return `Po termínu (${Math.abs(days)}d)`
+  const d = getDaysDifference()
+  if (d === null) return ''
+  const days = Math.ceil(d)
+  if (d < 0) return `Po termínu (${Math.abs(days)}d)`
   if (days === 0) return 'Dnes!'
   if (days === 1) return 'Zítra'
   if (days <= 7) return `${days} dní`
-  return `${Math.ceil(days / 7)} týdnů`
+  return `${Math.ceil(days/7)} týdnů`
 })
 
-function handleDragStart(event: DragEvent) {
-  if (event.dataTransfer) {
-    event.dataTransfer.setData('text/plain', props.task.id)
-    event.dataTransfer.effectAllowed = 'move'
-  }
-}
-
-function handleDragEnd() {}
-
-function editTask() {
-  showModal.value = false
-  emit('edit', props.task)
-}
-
-function deleteTask() {
-  showModal.value = false
-  emit('delete', props.task.id)
-}
-
 function formatDate(date: Date) {
-  return new Date(date).toLocaleDateString('cs-CZ', {
-    day: '2-digit',
-    month: '2-digit'
-  })
+  return new Date(date).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' })
 }
 
 function formatDueDate(date: Date) {
-  return new Date(date).toLocaleDateString('cs-CZ', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  })
+  return new Date(date).toLocaleDateString('cs-CZ')
 }
+
+function handleDragStart(e: DragEvent) {
+  e.dataTransfer?.setData('text/plain', props.task.id)
+}
+function handleDragEnd() {}
 </script>
 
 <style scoped>
-.task-card {
-  min-height: 120px;
-}
-
-.deadline-bar-red {
-  background-color: #ef4444 !important;
-}
-
-.deadline-bar-yellow {
-  background-color: #eab308 !important;
-}
-
-.deadline-bar-blue {
-  background-color: #3b82f6 !important;
-}
-
-.deadline-bar-gray {
-  background-color: #d1d5db !important;
-}
+.task-card { min-height: 120px; }
+.deadline-bar-red { background-color: #ef4444 !important; }
+.deadline-bar-yellow { background-color: #eab308 !important; }
+.deadline-bar-blue { background-color: #3b82f6 !important; }
+.deadline-bar-gray { background-color: #d1d5db !important; }
 </style>
