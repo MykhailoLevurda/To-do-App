@@ -92,8 +92,8 @@ const emit = defineEmits<{
   memberRemoved: [email: string];
 }>();
 
-const auth = useAuth();
-const firestoreProjects = useFirestoreProjects();
+const auth = useFreeloAuth();
+// Poznámka: Team members se načítají z Freelo API automaticky s projekty
 const teamMembers = useTeamMembers();
 
 const showAddMemberModal = ref(false);

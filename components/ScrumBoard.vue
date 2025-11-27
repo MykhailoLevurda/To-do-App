@@ -251,8 +251,8 @@ const props = defineProps<{
 }>();
 
 const scrumBoard = useScrumBoardStore();
-const firestoreTasks = useFirestoreTasks();
-const auth = useAuth();
+const freeloTasks = useFreeloTasks();
+const auth = useFreeloAuth();
 
 // Filter tasks by project
 const projectTasks = computed(() => {
@@ -299,6 +299,15 @@ const currentUserDisplayName = computed(() => {
   return auth.user.value.displayName || auth.user.value.email || null;
 });
 
+// Extract Freelo project ID from projectId (format: "freelo-123")
+const getFreeloProjectId = (projectId: string): number | null => {
+  if (projectId.startsWith('freelo-')) {
+    const id = parseInt(projectId.replace('freelo-', ''));
+    return isNaN(id) ? null : id;
+  }
+  return null;
+};
+
 // Methods
 function openAddTaskModal() {
   // Set assignee to current user when opening modal
@@ -332,8 +341,9 @@ async function addTask() {
     taskData.dueDate = new Date(newTask.value.dueDate);
   }
   
-  // Vždy uložit do "To Do" sloupce při vytvoření s projectId
-  await firestoreTasks.addTask(taskData);
+  // Poznámka: Vytváření úkolů přes Freelo API vyžaduje tasklist ID
+  // Pro jednoduchost zobrazíme upozornění
+  alert('Vytváření úkolů je momentálně dostupné pouze v Freelo aplikaci. Úkoly se načítají automaticky z vašeho Freelo účtu.');
   
   // Reset form
   newTask.value = {
@@ -371,19 +381,22 @@ async function updateTask() {
     updates.dueDate = new Date(updates.dueDate);
   }
   
-  await firestoreTasks.updateTask(editingTask.value.id, updates);
+  // Poznámka: Úprava úkolů přes Freelo API vyžaduje specifické endpointy
+  alert('Úprava úkolů je momentálně dostupná pouze v Freelo aplikaci.');
   showEditTaskModal.value = false;
   editingTask.value = null;
 }
 
 async function deleteTask(taskId: string) {
   if (confirm('Are you sure you want to delete this task?')) {
-    await firestoreTasks.deleteTask(taskId);
+    // Poznámka: Mazání úkolů přes Freelo API
+    alert('Mazání úkolů je momentálně dostupné pouze v Freelo aplikaci.');
   }
 }
 
 async function moveTask(taskId: string, newStatus: string) {
-  await firestoreTasks.updateTaskStatus(taskId, newStatus as 'todo' | 'in-progress' | 'done');
+  // Poznámka: Změna stavu úkolu přes Freelo API
+  alert('Změna stavu úkolu je momentálně dostupná pouze v Freelo aplikaci.');
 }
 
 async function handleDrop(event: DragEvent, targetStatus: string) {
@@ -395,42 +408,61 @@ async function handleDrop(event: DragEvent, targetStatus: string) {
   }
 }
 
-// Start Firestore listener when component mounts
-onMounted(() => {
+// Load tasks from Freelo API when component mounts
+onMounted(async () => {
   console.log('[ScrumBoard] Component mounted, auth status:', auth.isAuthenticated);
-  if (auth.isAuthenticated) {
-    firestoreTasks.startListening();
+  if (auth.isAuthenticated && props.projectId) {
+    await loadTasksFromFreelo();
   }
 });
 
-// Stop Firestore listener when component unmounts
-onUnmounted(() => {
-  console.log('[ScrumBoard] Component unmounting, stopping listener');
-  firestoreTasks.stopListening();
-});
+// Load tasks from Freelo API
+const loadTasksFromFreelo = async () => {
+  try {
+    const freeloProjectId = getFreeloProjectId(props.projectId);
+    if (!freeloProjectId) {
+      console.warn('[ScrumBoard] Invalid Freelo project ID:', props.projectId);
+      return;
+    }
+
+    // Získat ID přihlášeného uživatele pro filtrování úkolů
+    const workerId = auth.user.value?.id;
+    
+    console.log('[ScrumBoard] Loading tasks from Freelo for project:', freeloProjectId, workerId ? `(filtered by user ${workerId})` : '(all tasks)');
+    const tasks = await freeloTasks.syncTasksForProject(freeloProjectId, workerId);
+    
+    // Update store with tasks
+    scrumBoard.setTasks(tasks);
+    console.log('[ScrumBoard] Loaded', tasks.length, 'tasks from Freelo');
+    
+    if (tasks.length === 0 && workerId) {
+      console.log('[ScrumBoard] No tasks found. This might mean:');
+      console.log('  - No tasks are assigned to you in this project');
+      console.log('  - Try loading all tasks (remove worker_id filter)');
+    }
+  } catch (error: any) {
+    console.error('[ScrumBoard] Error loading tasks from Freelo:', error);
+    alert('Chyba při načítání úkolů: ' + (error.message || 'Neznámá chyba'));
+  }
+};
 
 // Watch for authentication changes
 watch(() => auth.isAuthenticated, (isAuth, wasAuth) => {
-  console.log('[ScrumBoard] Auth changed:', { wasAuth, isAuth, userId: auth.user.value?.uid });
-  if (isAuth) {
-    console.log('[ScrumBoard] User logged in, starting listener');
-    firestoreTasks.startListening();
+  console.log('[ScrumBoard] Auth changed:', { wasAuth, isAuth, userEmail: auth.user.value?.email });
+  if (isAuth && props.projectId) {
+    console.log('[ScrumBoard] User logged in, loading tasks');
+    loadTasksFromFreelo();
   } else {
-    console.log('[ScrumBoard] User logged out, stopping listener and clearing tasks');
-    firestoreTasks.stopListening();
+    console.log('[ScrumBoard] User logged out, clearing tasks');
     scrumBoard.clearTasks();
   }
 });
 
-// Watch for user changes (different user logs in)
-watch(() => auth.user.value?.uid, (newUid, oldUid) => {
-  console.log('[ScrumBoard] User UID changed:', { oldUid, newUid });
-  if (oldUid && newUid && oldUid !== newUid) {
-    console.log('[ScrumBoard] Different user detected, switching context');
-    // Different user logged in - clear old tasks and restart listener
-    scrumBoard.clearTasks();
-    firestoreTasks.stopListening();
-    firestoreTasks.startListening();
+// Watch for project changes
+watch(() => props.projectId, async (newProjectId) => {
+  if (newProjectId && auth.isAuthenticated) {
+    console.log('[ScrumBoard] Project changed, loading tasks');
+    await loadTasksFromFreelo();
   }
 });
 </script>

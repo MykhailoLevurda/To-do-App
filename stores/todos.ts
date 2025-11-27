@@ -77,6 +77,9 @@ export const useScrumBoardStore = defineStore("scrumBoard", {
     clearTasks() {
       this.tasks = [];
     },
+    setTasks(tasks: TaskItem[]) {
+      this.tasks = tasks;
+    },
     setLoading(loading: boolean) {
       this.isLoading = loading;
     },

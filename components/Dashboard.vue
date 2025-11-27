@@ -189,9 +189,8 @@
 import type { Project } from '~/types';
 
 const projectsStore = useProjectsStore();
-const firestoreProjects = useFirestoreProjects();
-const firestoreTasks = useFirestoreTasks();
-const auth = useAuth();
+const freeloProjects = useFreeloProjects();
+const auth = useFreeloAuth();
 const router = useRouter();
 
 // Modal states
@@ -251,28 +250,9 @@ async function saveProject() {
   }
   
   try {
-    if (editingProject.value) {
-      // Update existing project
-      await firestoreProjects.updateProject(editingProject.value.id, {
-        name: projectForm.value.name,
-        description: projectForm.value.description,
-        color: projectForm.value.color
-      });
-    } else {
-      // Create new project
-      const result = await firestoreProjects.addProject({
-        name: projectForm.value.name,
-        description: projectForm.value.description,
-        color: projectForm.value.color,
-        status: 'active',
-        createdBy: auth.user.value.uid
-      });
-      
-      if (!result) {
-        throw new Error('Nepodařilo se vytvořit projekt. Zkuste to prosím znovu.');
-      }
-    }
-    
+    // Poznámka: Freelo API neumožňuje vytváření/úpravu projektů přes API v této verzi
+    // Projekty se spravují přímo v Freelo aplikaci
+    alert('Vytváření a úprava projektů je momentálně dostupné pouze v Freelo aplikaci. Projekty se načítají automaticky z vašeho Freelo účtu.');
     closeProjectModal();
   } catch (error: any) {
     console.error('[Dashboard] Error saving project:', error);
@@ -308,73 +288,69 @@ function openProject(project: Project) {
 }
 
 async function archiveProject(projectId: string) {
-  if (confirm('Opravdu chcete archivovat tento projekt?')) {
-    await firestoreProjects.archiveProject(projectId);
-  }
+  alert('Archivace projektů je dostupná pouze v Freelo aplikaci.');
 }
 
 async function unarchiveProject(projectId: string) {
-  await firestoreProjects.unarchiveProject(projectId);
+  alert('Zrušení archivace projektů je dostupné pouze v Freelo aplikaci.');
 }
 
 async function deleteProject(projectId: string) {
-  if (confirm('Opravdu chcete smazat tento projekt? Tato akce je nevratná a smaže i všechny úkoly v projektu.')) {
-    await firestoreProjects.deleteProject(projectId);
-  }
+  alert('Mazání projektů je dostupné pouze v Freelo aplikaci.');
 }
 
 // Lifecycle
 onMounted(async () => {
   console.log('[Dashboard] Component mounted, auth status:', unref(auth.isAuthenticated));
-  console.log('[Dashboard] User:', auth.user.value?.uid);
+  console.log('[Dashboard] User:', auth.user.value?.email);
   console.log('[Dashboard] Cached projects:', projectsStore.projects.length);
   
   if (auth.isAuthenticated && auth.user.value) {
-    console.log('[Dashboard] Starting projects listener on mount');
-    firestoreProjects.startListening();
-    
-    // Sync task counts to fix any inconsistencies
-    console.log('[Dashboard] Syncing project task counts...');
-    await firestoreTasks.syncProjectTaskCounts();
+    console.log('[Dashboard] Loading projects from Freelo API');
+    try {
+      await freeloProjects.syncProjects();
+    } catch (error: any) {
+      console.error('[Dashboard] Error loading projects:', error);
+      alert('Chyba při načítání projektů: ' + (error.message || 'Neznámá chyba'));
+    }
   } else {
     console.warn('[Dashboard] Not authenticated on mount, waiting for auth state');
   }
 });
 
-onUnmounted(() => {
-  console.log('[Dashboard] Component unmounting, stopping listener');
-  firestoreProjects.stopListening();
-});
-
 // Watch for authentication changes
 watch(() => auth.isAuthenticated, (isAuth, wasAuth) => {
-  console.log('[Dashboard] Auth changed:', { wasAuth, isAuth, userId: auth.user.value?.uid });
+  console.log('[Dashboard] Auth changed:', { wasAuth, isAuth, userEmail: auth.user.value?.email });
   if (isAuth && auth.user.value) {
-    console.log('[Dashboard] User logged in, starting listener');
+    console.log('[Dashboard] User logged in, loading projects');
     nextTick(async () => {
-      firestoreProjects.startListening();
-      // Sync task counts after login
-      await firestoreTasks.syncProjectTaskCounts();
+      try {
+        await freeloProjects.syncProjects();
+      } catch (error: any) {
+        console.error('[Dashboard] Error loading projects after login:', error);
+        alert('Chyba při načítání projektů: ' + (error.message || 'Neznámá chyba'));
+      }
     });
   } else {
-    console.log('[Dashboard] User logged out, stopping listener and clearing projects');
-    firestoreProjects.stopListening();
+    console.log('[Dashboard] User logged out, clearing projects');
     projectsStore.clearProjects();
   }
 });
 
 // Watch for user changes (different user logs in)
-watch(() => auth.user.value?.uid, (newUid, oldUid) => {
-  console.log('[Dashboard] User UID changed:', { oldUid, newUid });
-  if (oldUid && newUid && oldUid !== newUid) {
+watch(() => auth.user.value?.email, (newEmail, oldEmail) => {
+  console.log('[Dashboard] User email changed:', { oldEmail, newEmail });
+  if (oldEmail && newEmail && oldEmail !== newEmail) {
     console.log('[Dashboard] Different user detected, switching context');
-    // Different user logged in - clear old projects and restart listener
+    // Different user logged in - clear old projects and reload
     projectsStore.clearProjects();
-    firestoreProjects.stopListening();
     nextTick(async () => {
-      firestoreProjects.startListening();
-      // Sync task counts for new user
-      await firestoreTasks.syncProjectTaskCounts();
+      try {
+        await freeloProjects.syncProjects();
+      } catch (error: any) {
+        console.error('[Dashboard] Error loading projects for new user:', error);
+        alert('Chyba při načítání projektů: ' + (error.message || 'Neznámá chyba'));
+      }
     });
   }
 });

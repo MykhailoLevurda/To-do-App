@@ -8,7 +8,7 @@ import {
   PencilSquareIcon,
 } from '@heroicons/vue/24/outline'
 
-const auth = useAuth()
+const auth = useFreeloAuth()
 const showAuthModal = ref(false)
 const showUserProfileModal = ref(false)
 

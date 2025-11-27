@@ -4,7 +4,7 @@
       <template #header>
         <div class="flex items-center justify-between">
           <h3 class="text-lg font-semibold">
-            {{ isSignUp ? 'Vytvořit účet' : 'Přihlásit se' }}
+            Přihlásit se do Freelo
           </h3>
           <UButton
             icon="i-heroicons-x-mark"
@@ -15,79 +15,53 @@
       </template>
 
       <div class="space-y-4">
-        <!-- Google Sign In -->
-        <UButton
-          block
-          icon="i-simple-icons-google"
-          color="white"
-          @click="handleGoogleSignIn"
-          :loading="googleLoading"
-        >
-          {{ isSignUp ? 'Registrovat přes Google' : 'Přihlásit přes Google' }}
-        </UButton>
+        <UAlert
+          color="blue"
+          variant="soft"
+          title="Přihlášení pomocí Freelo"
+          description="Pro přihlášení použijte svůj Freelo email a API klíč. API klíč najdete v nastavení Freelo účtu."
+        />
 
-        <div class="relative">
-          <div class="absolute inset-0 flex items-center">
-            <div class="w-full border-t border-gray-300 dark:border-gray-700"></div>
-          </div>
-          <div class="relative flex justify-center text-sm">
-            <span class="px-2 bg-white dark:bg-gray-900 text-gray-500">nebo</span>
-          </div>
-        </div>
-
-        <!-- Email/Password Form -->
+        <!-- Email/API Key Form -->
         <UForm :state="form" @submit="handleSubmit" class="space-y-4">
           <UFormGroup
-            v-if="isSignUp"
-            label="Jméno"
-            name="displayName"
-          >
-            <UInput
-              v-model="form.displayName"
-              placeholder="Vaše jméno"
-              icon="i-heroicons-user"
-            />
-          </UFormGroup>
-
-          <UFormGroup
-            label="Email"
+            label="Freelo Email"
             name="email"
             required
           >
             <UInput
               v-model="form.email"
               type="email"
-              placeholder="your@email.com"
+              placeholder="vas@email.com"
               icon="i-heroicons-envelope"
               required
             />
           </UFormGroup>
 
           <UFormGroup
-            label="Heslo"
-            name="password"
+            label="API klíč"
+            name="apiKey"
             required
+            description="API klíč najdete v nastavení Freelo účtu"
           >
             <UInput
-              v-model="form.password"
+              v-model="form.apiKey"
               type="password"
-              placeholder="••••••••"
-              icon="i-heroicons-lock-closed"
+              placeholder="Váš Freelo API klíč"
+              icon="i-heroicons-key"
               required
             />
-          </UFormGroup>
-
-          <UFormGroup
-            v-if="isSignUp"
-            label="Potvrzení hesla"
-            name="confirmPassword"
-          >
-            <UInput
-              v-model="form.confirmPassword"
-              type="password"
-              placeholder="••••••••"
-              icon="i-heroicons-lock-closed"
-            />
+            <template #help>
+              <UButton
+                variant="link"
+                size="xs"
+                to="https://app.freelo.io/profil/nastaveni"
+                target="_blank"
+                external
+              >
+                Najít API klíč v nastavení →
+              </UButton>
+            </template>
           </UFormGroup>
 
           <UAlert
@@ -104,22 +78,9 @@
             block
             :loading="loading"
           >
-            {{ isSignUp ? 'Vytvořit účet' : 'Přihlásit se' }}
+            Přihlásit se
           </UButton>
         </UForm>
-
-        <div class="text-center text-sm">
-          <span class="text-gray-600 dark:text-gray-400">
-            {{ isSignUp ? 'Už máte účet?' : 'Nemáte účet?' }}
-          </span>
-          <UButton
-            variant="link"
-            @click="toggleMode"
-            class="ml-1"
-          >
-            {{ isSignUp ? 'Přihlásit se' : 'Vytvořit účet' }}
-          </UButton>
-        </div>
       </div>
     </UCard>
   </UModal>
@@ -127,87 +88,49 @@
 
 <script setup lang="ts">
 const isOpen = defineModel<boolean>();
-const auth = useAuth();
+const auth = useFreeloAuth();
 
-const isSignUp = ref(false);
 const loading = ref(false);
-const googleLoading = ref(false);
 const authError = ref<string | null>(null);
 
 const form = reactive({
   email: '',
-  password: '',
-  confirmPassword: '',
-  displayName: ''
+  apiKey: ''
 });
-
-const toggleMode = () => {
-  isSignUp.value = !isSignUp.value;
-  authError.value = null;
-  form.password = '';
-  form.confirmPassword = '';
-};
 
 const handleSubmit = async () => {
   authError.value = null;
 
-  if (isSignUp.value && form.password !== form.confirmPassword) {
-    authError.value = 'Hesla se neshodují';
+  if (!form.email || !form.apiKey) {
+    authError.value = 'Vyplňte email a API klíč';
     return;
   }
 
-  if (form.password.length < 6) {
-    authError.value = 'Heslo musí mít alespoň 6 znaků';
+  // Validace emailu
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(form.email)) {
+    authError.value = 'Neplatný formát emailu';
     return;
   }
 
   loading.value = true;
 
   try {
-    if (isSignUp.value) {
-      const user = await auth.signUp(form.email, form.password, form.displayName);
-      if (user) {
-        isOpen.value = false;
-        resetForm();
-      } else {
-        authError.value = auth.error.value;
-      }
+    const user = await auth.signIn(form.email, form.apiKey);
+    if (user) {
+      isOpen.value = false;
+      resetForm();
     } else {
-      const user = await auth.signIn(form.email, form.password);
-      if (user) {
-        isOpen.value = false;
-        resetForm();
-      } else {
-        authError.value = auth.error.value;
-      }
+      authError.value = auth.error.value || 'Chyba při přihlášení';
     }
   } finally {
     loading.value = false;
   }
 };
 
-const handleGoogleSignIn = async () => {
-  googleLoading.value = true;
-  authError.value = null;
-
-  try {
-    const user = await auth.signInWithGoogle();
-    if (user) {
-      isOpen.value = false;
-      resetForm();
-    } else {
-      authError.value = auth.error.value;
-    }
-  } finally {
-    googleLoading.value = false;
-  }
-};
-
 const resetForm = () => {
   form.email = '';
-  form.password = '';
-  form.confirmPassword = '';
-  form.displayName = '';
+  form.apiKey = '';
   authError.value = null;
 };
 

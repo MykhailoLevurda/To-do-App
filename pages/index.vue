@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-const auth = useAuth();
+const auth = useFreeloAuth();
 const showAuthModal = ref(false);
 
 // Force remount Dashboard when user changes
@@ -7,9 +7,9 @@ const dashboardKey = ref('initial');
 
 // Použijeme přímo auth.isAuthenticated pro lepší reaktivitu
 
-watch(() => auth.user.value?.uid, (newUid) => {
-  console.log('[Index Page] User UID changed:', newUid);
-  dashboardKey.value = newUid || `no-user-${Date.now()}`;
+watch(() => auth.user.value?.email, (newEmail) => {
+  console.log('[Index Page] User email changed:', newEmail);
+  dashboardKey.value = newEmail || `no-user-${Date.now()}`;
 }, { immediate: true });
 
 watch(() => auth.isAuthenticated, (isAuth) => {
@@ -37,6 +37,13 @@ onMounted(() => {
     user: auth.user.value,
     isAuthenticated: auth.isAuthenticated
   });
+  
+  // Zkontrolovat, zda je uživatel přihlášen
+  if (auth.isAuthenticated) {
+    console.log('[Index Page] User is authenticated:', auth.user.value?.email);
+  } else {
+    console.log('[Index Page] User is not authenticated');
+  }
 });
 </script>
 <template>
