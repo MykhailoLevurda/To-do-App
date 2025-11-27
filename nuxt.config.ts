@@ -28,13 +28,28 @@ export default defineNuxtConfig({
   vite: {
     define: {
       global: 'globalThis',
+    },
+    optimizeDeps: {
+      exclude: ['srvx']
     }
   },
   ssr: true,
   nitro: {
     experimental: {
       wasm: true
-    }
+    },
+    // Zlepšit handling při restartu
+    devServer: {
+      watch: []
+    },
+    // Workaround pro srvx problém
+    compatibilityDate: '2024-01-01',
+    // Vypnout některé experimentální funkce, které mohou způsobovat problémy
+    preset: 'node-server'
+  },
+  // Zlepšit handling při restartu dev serveru
+  devServer: {
+    port: 3000
   },
   devtools: { enabled: true },
   colorMode: {

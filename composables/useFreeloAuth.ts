@@ -87,11 +87,13 @@ export const useFreeloAuth = () => {
 
   /**
    * Kontrola, zda je uživatel přihlášen
+   * Obnoví uživatele z Firestore, ale neověřuje credentials
    */
-  const checkAuth = () => {
-    const credentials = getCredentials();
+  const checkAuth = async () => {
+    const credentials = await getCredentials();
     if (credentials && !user.value) {
-      // Obnovení uživatele z credentials
+      // Obnovení uživatele z credentials (bez ověření)
+      // Skutečné ověření proběhne při prvním API volání
       user.value = {
         email: credentials.email,
         displayName: credentials.email.split('@')[0],
@@ -106,8 +108,8 @@ export const useFreeloAuth = () => {
   const testCredentialsAndGetUserId = async (email: string, apiKey: string): Promise<{ isValid: boolean; userId?: number }> => {
     try {
       // Dočasně nastavit credentials pro test
-      const originalCredentials = getCredentials();
-      setCredentials(email, apiKey);
+      const originalCredentials = await getCredentials();
+      await setCredentials(email, apiKey);
       
       try {
         // Zkusit načíst projekty - z prvního projektu získáme owner.id (což je ID uživatele)
@@ -123,9 +125,9 @@ export const useFreeloAuth = () => {
       } finally {
         // Obnovit původní credentials
         if (originalCredentials) {
-          setCredentials(originalCredentials.email, originalCredentials.apiKey);
+          await setCredentials(originalCredentials.email, originalCredentials.apiKey);
         } else {
-          clearCredentials();
+          await clearCredentials();
         }
       }
     } catch (error) {
@@ -135,26 +137,37 @@ export const useFreeloAuth = () => {
   };
 
   /**
-   * Automatické přihlášení z .env (pro vývoj)
+   * Automatické přihlášení z Firestore nebo .env
    */
   const autoSignIn = async () => {
-    const credentials = getCredentials();
+    const credentials = await getCredentials();
     if (credentials && !user.value) {
-      // Pokud jsou credentials v .env, automaticky se přihlásit
       const config = useRuntimeConfig();
+      
+      // Pokud jsou credentials v .env, automaticky se přihlásit
       if (config.public.freeloEmail && config.public.freeloApiKey) {
         console.log('[Freelo Auth] Auto-signing in from .env');
         await signIn(credentials.email, credentials.apiKey);
+      } else if (credentials.email && credentials.apiKey) {
+        // Pokud jsou credentials v Firestore, automaticky se přihlásit
+        console.log('[Freelo Auth] Auto-signing in from Firestore');
+        try {
+          await signIn(credentials.email, credentials.apiKey);
+        } catch (error: any) {
+          // Pokud credentials nejsou platné, vymazat je
+          console.warn('[Freelo Auth] Auto-sign in failed, clearing credentials:', error);
+          await clearCredentials();
+        }
       } else {
-        // Jinak jen obnovit uživatele z sessionStorage
-        checkAuth();
+        // Jinak jen obnovit uživatele z Firestore (pokud jsou data)
+        await checkAuth();
       }
     }
   };
 
   // Kontrola při inicializaci
   if (process.client) {
-    // Zkusit automatické přihlášení (funguje i pro .env)
+    // Zkusit automatické přihlášení (funguje pro .env i localStorage)
     autoSignIn();
   }
 

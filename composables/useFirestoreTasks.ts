@@ -19,25 +19,32 @@ import type { TaskItem } from '~/stores/todos';
 export const useFirestoreTasks = () => {
   const { $firestore } = useNuxtApp();
   const firestore = $firestore;
-  const auth = useAuth();
+  const auth = useFreeloAuth(); // Změněno z useAuth() na useFreeloAuth()
   const scrumBoardStore = useScrumBoardStore();
 
   let unsubscribe: Unsubscribe | null = null;
 
-  const startListening = () => {
+  const startListening = (projectId?: string) => {
     if (!auth.isAuthenticated || !auth.user.value) return;
 
     if (unsubscribe) unsubscribe();
 
     const tasksRef = collection(firestore, 'tasks');
-    const q = query(tasksRef, where('createdBy', '==', auth.user.value.uid));
+    // Pro Freelo auth používáme email místo uid
+    const userId = auth.user.value.email || 'unknown';
+    let q = query(tasksRef, where('createdBy', '==', userId));
+    
+    // Pokud je zadán projectId, filtrovat podle projektu
+    if (projectId) {
+      q = query(tasksRef, where('createdBy', '==', userId), where('projectId', '==', projectId));
+    }
 
     unsubscribe = onSnapshot(q, (snapshot) => {
       const tasks: TaskItem[] = [];
 
       snapshot.forEach((doc) => {
         const data = doc.data();
-        tasks.push({
+        const task: any = {
           id: doc.id,
           title: data.title,
           description: data.description,
@@ -50,7 +57,14 @@ export const useFirestoreTasks = () => {
           approved: data.approved || false,
           createdAt: data.createdAt?.toDate() || new Date(),
           updatedAt: data.updatedAt?.toDate() || new Date()
-        });
+        };
+        
+        // Uložit freeloId pokud existuje (pro synchronizaci s Freelo API)
+        if (data.freeloId) {
+          task.freeloId = data.freeloId;
+        }
+        
+        tasks.push(task);
       });
 
       tasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -70,9 +84,11 @@ export const useFirestoreTasks = () => {
 
     try {
       const tasksRef = collection(firestore, 'tasks');
+      // Pro Freelo auth používáme email místo uid
+      const createdBy = auth.user.value.email || 'unknown';
       const docRef = await addDoc(tasksRef, {
         ...task,
-        createdBy: auth.user.value.uid,
+        createdBy,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -162,7 +178,8 @@ export const useFirestoreTasks = () => {
     if (!auth.user.value) return false;
 
     try {
-      const userId = auth.user.value.uid;
+      // Pro Freelo auth používáme email místo uid
+      const userId = auth.user.value.email || 'unknown';
 
       const projectsRef = collection(firestore, 'projects');
       const projectsQuery = query(projectsRef, where('createdBy', '==', userId));
@@ -229,10 +246,12 @@ export const useFirestoreTasks = () => {
 
     try {
       const ref = collection(firestore, 'tasks', taskId, 'comments');
+      // Pro Freelo auth používáme email místo uid
+      const userId = auth.user.value.email || 'unknown';
       await addDoc(ref, {
         text,
-        author: auth.user.value.email || 'Neznámý',
-        userId: auth.user.value.uid,
+        author: auth.user.value.email || auth.user.value.displayName || 'Neznámý',
+        userId: userId,
         createdAt: serverTimestamp()
       });
 

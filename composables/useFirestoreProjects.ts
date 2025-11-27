@@ -28,7 +28,8 @@ export const useFirestoreProjects = () => {
       return;
     }
 
-    const userId = auth.user.value.uid;
+    // Pro Freelo auth používáme email místo uid
+    const userId = auth.user.value.email || 'unknown';
     console.log('[Firestore Projects] Starting listener for user:', userId);
 
     // Set current user and check if we need to clear old data
@@ -173,9 +174,11 @@ export const useFirestoreProjects = () => {
 
     try {
       const projectsRef = collection(firestore, 'projects');
+      // Pro Freelo auth používáme email místo uid
+      const createdBy = auth.user.value.email || 'unknown';
       const docRef = await addDoc(projectsRef, {
         ...project,
-        createdBy: auth.user.value.uid,
+        createdBy,
         taskCount: 0,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()

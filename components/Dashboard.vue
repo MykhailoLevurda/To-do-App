@@ -7,13 +7,23 @@
           <h1 class="text-3xl font-bold">Moje Projekty</h1>
           <p class="text-gray-500 mt-1">Správa všech vašich projektů a úkolů</p>
         </div>
-        <UButton
-          icon="i-heroicons-plus"
-          size="lg"
-          @click="handleNewProjectClick"
-        >
-          Nový Projekt
-        </UButton>
+        <div class="flex gap-2">
+          <UButton
+            icon="i-heroicons-link"
+            size="lg"
+            variant="outline"
+            @click="handleAddFreeloProjectClick"
+          >
+            Přidat z Freelo
+          </UButton>
+          <UButton
+            icon="i-heroicons-plus"
+            size="lg"
+            @click="handleNewProjectClick"
+          >
+            Nový Projekt
+          </UButton>
+        </div>
       </div>
     </div>
 
@@ -115,6 +125,52 @@
       </div>
     </div>
 
+    <!-- Add Freelo Project Modal -->
+    <UModal v-model="showAddFreeloProjectModal">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">
+            Přidat projekt z Freelo
+          </h3>
+        </template>
+
+        <UForm 
+          id="freeloProjectForm" 
+          :state="freeloProjectForm" 
+          @submit="addFreeloProject" 
+          class="space-y-4"
+        >
+          <UFormGroup label="Freelo Project ID" required>
+            <UInput 
+              v-model="freeloProjectForm.projectId" 
+              placeholder="Např. 12345"
+              type="number"
+              autofocus
+            />
+            <template #description>
+              Zadejte ID projektu z Freelo. ID najdete v URL projektu v Freelo aplikaci.
+            </template>
+          </UFormGroup>
+        </UForm>
+
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="closeFreeloProjectModal">
+              Zrušit
+            </UButton>
+            <UButton 
+              form="freeloProjectForm" 
+              type="submit" 
+              :disabled="!freeloProjectForm.projectId || isAddingFreeloProject"
+              :loading="isAddingFreeloProject"
+            >
+              Přidat projekt
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
     <!-- Add/Edit Project Modal -->
     <UModal v-model="showAddProjectModal">
       <UCard>
@@ -195,9 +251,11 @@ const router = useRouter();
 
 // Modal states
 const showAddProjectModal = ref(false);
+const showAddFreeloProjectModal = ref(false);
 const showAuthModal = ref(false);
 const editingProject = ref<Project | null>(null);
 const pendingProjectCreation = ref(false); // Flag pro otevření modalu po přihlášení
+const isAddingFreeloProject = ref(false);
 
 // Form data
 const projectForm = ref({
@@ -205,6 +263,10 @@ const projectForm = ref({
   description: '',
   color: '#3b82f6',
   status: 'active' as 'active' | 'archived'
+});
+
+const freeloProjectForm = ref({
+  projectId: ''
 });
 
 // Available colors
@@ -238,6 +300,78 @@ function handleNewProjectClick() {
   showAddProjectModal.value = true;
 }
 
+function handleAddFreeloProjectClick() {
+  // Kontrola přihlášení před otevřením modalu
+  if (!auth.isAuthenticated || !auth.user.value) {
+    showAuthModal.value = true;
+    return;
+  }
+  
+  showAddFreeloProjectModal.value = true;
+}
+
+async function addFreeloProject() {
+  if (!freeloProjectForm.value.projectId) return;
+  
+  const projectId = parseInt(freeloProjectForm.value.projectId);
+  if (isNaN(projectId)) {
+    alert('Zadejte platné číslo projektu.');
+    return;
+  }
+  
+  // Kontrola přihlášení
+  if (!auth.isAuthenticated || !auth.user.value) {
+    showAddFreeloProjectModal.value = false;
+    showAuthModal.value = true;
+    alert('Pro přidání projektu se musíte přihlásit.');
+    return;
+  }
+  
+  isAddingFreeloProject.value = true;
+  
+  try {
+    // 1. Načíst detail projektu z Freelo API
+    const freeloProject = await freeloProjects.fetchProjectById(projectId);
+    
+    if (!freeloProject) {
+      alert('Projekt s ID ' + projectId + ' nebyl nalezen v Freelo.');
+      isAddingFreeloProject.value = false;
+      return;
+    }
+    
+    // 2. Zkontrolovat, jestli už projekt není v seznamu
+    const existingProject = projectsStore.projects.find(
+      p => (p as any).freeloId === freeloProject.id || p.id === `freelo-${freeloProject.id}`
+    );
+    
+    if (existingProject) {
+      alert('Tento projekt je již v seznamu projektů.');
+      isAddingFreeloProject.value = false;
+      return;
+    }
+    
+    // 3. Zavřít modal a zobrazit úspěch
+    closeFreeloProjectModal();
+    alert('Projekt byl úspěšně přidán! Projekty se načítají z Freelo API.');
+    
+    // 4. Znovu načíst projekty z Freelo API
+    await freeloProjects.syncProjects();
+    
+  } catch (error: any) {
+    console.error('[Dashboard] Error adding Freelo project:', error);
+    alert(error.message || 'Chyba při přidávání projektu. Zkuste to prosím znovu.');
+  } finally {
+    isAddingFreeloProject.value = false;
+  }
+}
+
+function closeFreeloProjectModal() {
+  showAddFreeloProjectModal.value = false;
+  freeloProjectForm.value = {
+    projectId: ''
+  };
+}
+
 async function saveProject() {
   if (!projectForm.value.name) return;
   
@@ -250,9 +384,10 @@ async function saveProject() {
   }
   
   try {
-    // Poznámka: Freelo API neumožňuje vytváření/úpravu projektů přes API v této verzi
-    // Projekty se spravují přímo v Freelo aplikaci
-    alert('Vytváření a úprava projektů je momentálně dostupné pouze v Freelo aplikaci. Projekty se načítají automaticky z vašeho Freelo účtu.');
+    // Poznámka: Freelo API neumožňuje vytváření projektů přes API
+    // Projekty se musí vytvářet přímo v Freelo aplikaci
+    // Uživatel může přidat existující projekt podle ID
+    alert('Vytváření projektů je dostupné pouze v Freelo aplikaci. Můžete přidat existující projekt podle ID pomocí tlačítka "Přidat z Freelo".');
     closeProjectModal();
   } catch (error: any) {
     console.error('[Dashboard] Error saving project:', error);

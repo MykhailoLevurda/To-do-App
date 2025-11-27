@@ -98,7 +98,12 @@
         <div class="mt-6 border-t pt-4">
           <h4 class="font-semibold mb-2">Komentáře</h4>
 
-          <div v-if="taskComments[task.id]?.length" class="space-y-3">
+          <div v-if="isLoadingComments" class="text-center py-4">
+            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+            <p class="text-xs text-gray-500 mt-2">Načítám komentáře...</p>
+          </div>
+          
+          <div v-else-if="taskComments[task.id]?.length" class="space-y-3">
             <div 
               v-for="c in taskComments[task.id]" 
               :key="c.id"
@@ -106,30 +111,10 @@
             >
               <div class="flex justify-between text-xs text-gray-500 mb-1">
                 <span>{{ c.author }}</span>
-                <span>{{ new Date(c.createdAt?.toDate?.() || 0).toLocaleString('cs-CZ') }}</span>
+                <span>{{ c.createdAt ? new Date(c.createdAt).toLocaleString('cs-CZ') : '' }}</span>
               </div>
 
-              <template v-if="editingCommentId === c.id">
-                <textarea
-                  v-model="editingCommentText"
-                  class="w-full p-2 rounded border"
-                  rows="2"
-                ></textarea>
-
-                <div class="flex gap-2 mt-2">
-                  <UButton size="xs" @click="saveEditedComment(c.id)">Uložit</UButton>
-                  <UButton size="xs" color="gray" @click="cancelEdit()">Zrušit</UButton>
-                </div>
-              </template>
-
-              <template v-else>
-                <p class="whitespace-pre-wrap">{{ c.text }}</p>
-
-                <div class="flex gap-3 mt-2 text-xs text-gray-500">
-                  <button @click="startEdit(c)" class="hover:underline">Upravit</button>
-                  <button @click="removeComment(c.id)" class="hover:underline text-red-500">Smazat</button>
-                </div>
-              </template>
+              <p class="whitespace-pre-wrap" v-html="c.text"></p>
             </div>
           </div>
 
@@ -166,15 +151,13 @@
           </div>
           <div class="flex gap-2">
             <UButton
-              v-if="task.status === 'done' && !task.approved"
-              icon="i-heroicons-check-circle"
-              color="green"
-              @click="approveTask"
+              :icon="task.status === 'done' ? 'i-heroicons-arrow-path' : 'i-heroicons-check-circle'"
+              :color="task.status === 'done' ? 'blue' : 'green'"
+              @click="toggleTaskStatus"
             >
-              Schválit
+              {{ task.status === 'done' ? 'Otevřít' : 'Zavřít' }}
             </UButton>
             <UButton
-              v-if="!task.approved"
               icon="i-heroicons-pencil"
               @click="editTask"
             >
@@ -199,15 +182,12 @@
 import type { TaskItem } from '~/stores/todos'
 import { UserIcon, ChartBarIcon } from '@heroicons/vue/24/solid'
 
-const {
-  addComment,
-  listenComments,
-  stopListeningComments,
-  taskComments,
-  deleteComment,
-  updateComment,
-  approveTask: approveTaskFirestore
-} = useFirestoreTasks()
+const freeloTasks = useFreeloTasks();
+const auth = useFreeloAuth();
+
+// Komentáře z Freelo API
+const taskComments = ref<Record<string, any[]>>({});
+const isLoadingComments = ref(false);
 
 const editingCommentId = ref<string | null>(null)
 const editingCommentText = ref('')
@@ -227,20 +207,104 @@ const emit = defineEmits<{
 const showModal = ref(false)
 const openModal = () => (showModal.value = true)
 
-watch(showModal, (open) => {
-  if (open) listenComments(props.task.id)
-  else stopListeningComments(props.task.id)
-})
+watch(showModal, async (open) => {
+  if (open) {
+    await loadTaskComments();
+  } else {
+    // Vyčistit komentáře při zavření modalu
+    taskComments.value[props.task.id] = [];
+  }
+});
+
+// Načíst komentáře z Freelo API
+const loadTaskComments = async () => {
+  if (!auth.isAuthenticated) return;
+  
+  isLoadingComments.value = true;
+  try {
+    // Extrahovat Freelo task ID z task.id (formát: "freelo-123")
+    const taskId = props.task.id.startsWith('freelo-')
+      ? parseInt(props.task.id.replace('freelo-', ''))
+      : null;
+    
+    if (!taskId) {
+      console.warn('[TaskCard] Invalid Freelo task ID:', props.task.id);
+      return;
+    }
+    
+    // Načíst detail úkolu z Freelo API (obsahuje komentáře)
+    const taskDetail = await freeloTasks.fetchTaskDetail(taskId);
+    
+    if (taskDetail && taskDetail.comments && Array.isArray(taskDetail.comments)) {
+      taskComments.value[props.task.id] = taskDetail.comments.map((c: any) => ({
+        id: c.id,
+        text: c.content,
+        author: c.author?.fullname || 'Neznámý',
+        createdAt: new Date(c.date_add)
+      }));
+    } else {
+      taskComments.value[props.task.id] = [];
+    }
+  } catch (error: any) {
+    console.error('[TaskCard] Error loading comments:', error);
+    taskComments.value[props.task.id] = [];
+  } finally {
+    isLoadingComments.value = false;
+  }
+};
 
 async function submitComment() {
-  if (!newComment.value.trim()) return
-  await addComment(props.task.id, newComment.value.trim())
-  newComment.value = ''
+  if (!newComment.value.trim()) return;
+  if (!auth.isAuthenticated) {
+    alert('Pro přidání komentáře se musíte přihlásit.');
+    return;
+  }
+  
+  const commentText = newComment.value.trim();
+  newComment.value = ''; // Vyčistit hned, aby se uživatel mohl připravit na další komentář
+  
+  try {
+    // Přidat komentář přes Freelo API
+    await freeloTasks.addComment(props.task.id, commentText);
+    
+    // Znovu načíst komentáře z Freelo API
+    await loadTaskComments();
+  } catch (error: any) {
+    console.error('[TaskCard] Error adding comment:', error);
+    alert('Chyba při přidávání komentáře: ' + (error.message || 'Neznámá chyba'));
+  }
 }
 
 async function approveTask() {
-  await approveTaskFirestore(props.task.id)
-  showModal.value = false
+  // Pro Freelo - schválení úkolu není podporováno přes API
+  alert('Schválení úkolů je dostupné pouze v Freelo aplikaci.');
+  showModal.value = false;
+}
+
+async function toggleTaskStatus() {
+  if (!auth.isAuthenticated) {
+    alert('Pro změnu stavu úkolu se musíte přihlásit.');
+    return;
+  }
+  
+  try {
+    const isDone = props.task.status === 'done';
+    
+    if (isDone) {
+      // Otevřít úkol (activate)
+      await freeloTasks.activateTask(props.task.id);
+      emit('move', props.task.id, 'todo');
+    } else {
+      // Zavřít úkol (finish)
+      await freeloTasks.finishTask(props.task.id);
+      emit('move', props.task.id, 'done');
+    }
+    
+    showModal.value = false;
+  } catch (error: any) {
+    console.error('[TaskCard] Error toggling task status:', error);
+    alert('Chyba při změně stavu úkolu: ' + (error.message || 'Neznámá chyba'));
+  }
 }
 
 function editTask() {
@@ -253,25 +317,8 @@ function deleteTask() {
   emit('delete', props.task.id)
 }
 
-function startEdit(c: any) {
-  editingCommentId.value = c.id
-  editingCommentText.value = c.text
-}
-
-function cancelEdit() {
-  editingCommentId.value = null
-  editingCommentText.value = ''
-}
-
-async function saveEditedComment(id: string) {
-  await updateComment(props.task.id, id, editingCommentText.value)
-  editingCommentId.value = null
-  editingCommentText.value = ''
-}
-
-async function removeComment(id: string) {
-  await deleteComment(props.task.id, id)
-}
+// Poznámka: Freelo API neumožňuje editaci a mazání komentářů přes API
+// Tyto funkce jsou ponechány pro případnou budoucí implementaci
 
 const priorityClass = computed(() => {
   switch (props.task.priority) {
@@ -335,9 +382,31 @@ function formatDueDate(date: Date) {
 }
 
 function handleDragStart(e: DragEvent) {
-  e.dataTransfer?.setData('text/plain', props.task.id)
+  console.log('[TaskCard] ===== handleDragStart CALLED =====');
+  console.log('[TaskCard] Task ID:', props.task.id);
+  console.log('[TaskCard] Task status:', props.task.status);
+  
+  if (e.dataTransfer) {
+    e.dataTransfer.setData('text/plain', props.task.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.dropEffect = 'move';
+    console.log('[TaskCard] Data set in dataTransfer:', props.task.id);
+  } else {
+    console.warn('[TaskCard] No dataTransfer in drag event!');
+  }
+  // Přidat vizuální feedback
+  if (e.target instanceof HTMLElement) {
+    e.target.style.opacity = '0.5';
+  }
 }
-function handleDragEnd() {}
+
+function handleDragEnd(e: DragEvent) {
+  console.log('[TaskCard] ===== handleDragEnd CALLED =====');
+  // Obnovit opacity
+  if (e.target instanceof HTMLElement) {
+    e.target.style.opacity = '1';
+  }
+}
 </script>
 
 <style scoped>

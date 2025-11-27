@@ -94,9 +94,9 @@ const FREELO_API_BASE = 'https://api2.freelo.io/v1';
 export const useFreeloApi = () => {
   const config = useRuntimeConfig();
   
-  // Uložení credentials do sessionStorage (ne localStorage kvůli bezpečnosti)
+  // Uložení credentials do Firestore (pouze email + API klíč)
   // Pro vývoj lze použít .env proměnné (volitelné)
-  const getCredentials = (): FreeloApiConfig | null => {
+  const getCredentials = async (): Promise<FreeloApiConfig | null> => {
     // Nejdřív zkusit .env proměnné z runtime config (pro vývoj)
     const envEmail = config.public.freeloEmail;
     const envApiKey = config.public.freeloApiKey;
@@ -105,29 +105,44 @@ export const useFreeloApi = () => {
       return { email: envEmail, apiKey: envApiKey };
     }
     
-    // Pak zkusit sessionStorage (pro produkci)
+    // Pak zkusit Firestore (pro trvalé přihlášení)
     if (!process.client) return null;
     
-    const email = sessionStorage.getItem('freelo_email');
-    const apiKey = sessionStorage.getItem('freelo_api_key');
+    // Zkusit načíst z localStorage email (pouze pro identifikaci)
+    const email = localStorage.getItem('freelo_email');
+    if (!email) return null;
     
-    if (!email || !apiKey) return null;
+    // Načíst API klíč z Firestore
+    const firestoreUsers = useFirestoreUsers();
+    const credentials = await firestoreUsers.getUserCredentials(email);
     
-    return { email, apiKey };
+    if (!credentials || !credentials.apiKey) return null;
+    
+    return { email: credentials.email, apiKey: credentials.apiKey };
   };
 
-  const setCredentials = (email: string, apiKey: string) => {
+  const setCredentials = async (email: string, apiKey: string) => {
     if (!process.client) return;
     
-    sessionStorage.setItem('freelo_email', email);
-    sessionStorage.setItem('freelo_api_key', apiKey);
+    // Uložit email do localStorage (pro rychlou identifikaci)
+    localStorage.setItem('freelo_email', email);
+    
+    // Uložit credentials do Firestore
+    const firestoreUsers = useFirestoreUsers();
+    await firestoreUsers.saveUserCredentials(email, apiKey);
   };
 
-  const clearCredentials = () => {
+  const clearCredentials = async () => {
     if (!process.client) return;
     
-    sessionStorage.removeItem('freelo_email');
-    sessionStorage.removeItem('freelo_api_key');
+    const email = localStorage.getItem('freelo_email');
+    localStorage.removeItem('freelo_email');
+    
+    // Smazat z Firestore
+    if (email) {
+      const firestoreUsers = useFirestoreUsers();
+      await firestoreUsers.deleteUserCredentials(email);
+    }
   };
 
   // Vytvoření Basic Auth headeru
@@ -141,7 +156,7 @@ export const useFreeloApi = () => {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> => {
-    const credentials = getCredentials();
+    const credentials = await getCredentials();
     
     if (!credentials) {
       throw new Error('Freelo credentials not found. Please log in.');
@@ -150,30 +165,117 @@ export const useFreeloApi = () => {
     // Použít server-side proxy místo přímého volání (řeší CORS problém)
     const proxyUrl = `/api/freelo${endpoint}`;
     
-    const response = await fetch(proxyUrl, {
-      ...options,
-      method: options.method || 'GET',
-      headers: {
-        'Authorization': getAuthHeader(credentials),
-        'X-Freelo-Email': credentials.email,
-        'X-Freelo-Api-Key': credentials.apiKey,
+    // Debug logging pro POST requesty
+    if (options.method === 'POST' || options.method === 'PUT' || options.method === 'PATCH') {
+      console.log('[Freelo API] ===== Sending', options.method, 'request =====');
+      console.log('[Freelo API] Endpoint:', endpoint);
+      console.log('[Freelo API] Proxy URL:', proxyUrl);
+      console.log('[Freelo API] Full URL:', window.location.origin + proxyUrl);
+      console.log('[Freelo API] Request body:', options.body);
+      console.log('[Freelo API] Request headers:', {
         'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      body: options.body,
-    });
+        'X-Freelo-Email': credentials.email ? '***' : undefined,
+        'X-Freelo-Api-Key': credentials.apiKey ? '***' : undefined,
+        'Authorization': 'Basic ***'
+      });
+    }
+    
+    let response: Response;
+    try {
+      console.log('[Freelo API] About to call fetch...');
+      response = await fetch(proxyUrl, {
+        ...options,
+        method: options.method || 'GET',
+        headers: {
+          'Authorization': getAuthHeader(credentials),
+          'X-Freelo-Email': credentials.email,
+          'X-Freelo-Api-Key': credentials.apiKey,
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        body: options.body,
+      });
+      console.log('[Freelo API] ✅ Fetch completed, status:', response.status);
+    } catch (fetchError: any) {
+      console.error('[Freelo API] ❌ Fetch error (network/CORS):', fetchError);
+      console.error('[Freelo API] Error details:', {
+        message: fetchError.message,
+        name: fetchError.name,
+        cause: fetchError.cause,
+        stack: fetchError.stack
+      });
+      throw new Error(`Síťová chyba při volání API: ${fetchError.message || 'Nelze se připojit k serveru'}`);
+    }
+    
+    // Debug: logovat response status
+    if (options.method === 'POST' || options.method === 'PUT' || options.method === 'PATCH') {
+      console.log('[Freelo API] Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        url: response.url,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+    }
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      let errorData: any = { error: 'Unknown error' };
+      const contentType = response.headers.get('content-type') || '';
+      
+      try {
+        const text = await response.text();
+        if (text) {
+          // Zkontrolovat, jestli je to JSON
+          if (contentType.includes('application/json') || text.trim().startsWith('{') || text.trim().startsWith('[')) {
+            try {
+              errorData = JSON.parse(text);
+            } catch (parseError) {
+              console.warn('[Freelo API] Could not parse JSON error response:', parseError);
+              // Pokud to není JSON, použít text jako zprávu
+              errorData = { error: text.substring(0, 200) };
+            }
+          } else {
+            // Pokud to není JSON (např. HTML error page), použít status text
+            console.warn('[Freelo API] Non-JSON error response received:', contentType);
+            errorData = { error: `Server error: ${response.status} ${response.statusText}` };
+          }
+        }
+      } catch (e) {
+        console.warn('[Freelo API] Could not read error response:', e);
+        errorData = { error: `Request failed: ${response.status} ${response.statusText}` };
+      }
+      
+      // Pokud je to volané z background sync, logovat jen jako warning
+      const isBackgroundSync = new Error().stack?.includes('syncWithFreeloInBackground') || false;
+      
+      if (isBackgroundSync && response.status >= 500) {
+        // Pro background sync a server errors (500+), logovat jen jako info
+        console.log('[Freelo API] ⚠️ Request failed (background sync, non-critical):', {
+          status: response.status,
+          endpoint,
+          error: errorData.error || errorData.message || 'Unknown error'
+        });
+      } else {
+        console.error('[Freelo API] Request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          endpoint,
+          contentType,
+          error: errorData
+        });
+      }
       
       if (response.status === 401) {
-        clearCredentials();
+        await clearCredentials();
         throw new Error('Neplatné přihlašovací údaje. Zkontrolujte email a API klíč.');
       }
       if (response.status === 429) {
         throw new Error('Překročen limit požadavků. Počkejte 60 sekund.');
       }
-      throw new Error(errorData.error || `Freelo API error: ${response.status}`);
+      
+      // Vytvořit lepší chybovou zprávu
+      const errorMessage = errorData.error || errorData.message || `Freelo API error: ${response.status} ${response.statusText}`;
+      throw new Error(errorMessage);
     }
 
     return await response.json();

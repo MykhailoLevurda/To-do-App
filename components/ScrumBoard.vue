@@ -4,12 +4,23 @@
     <div class="mb-6">
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-bold">Scrum Board</h1>
-        <UButton
-          icon="i-heroicons-plus"
-          @click="openAddTaskModal"
-        >
-          Add Task
-        </UButton>
+        <div class="flex items-center gap-2">
+          <UButton
+            icon="i-heroicons-arrow-path"
+            variant="outline"
+            @click="refreshTasks"
+            :loading="scrumBoard.isLoading"
+            title="Obnovit úkoly z Freelo"
+          >
+            Obnovit
+          </UButton>
+          <UButton
+            icon="i-heroicons-plus"
+            @click="openAddTaskModal"
+          >
+            Add Task
+          </UButton>
+        </div>
       </div>
       
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
@@ -56,9 +67,6 @@
         v-for="column in scrumBoard.columns"
         :key="column.id"
         class="column"
-        @drop="handleDrop($event, column.status)"
-        @dragover.prevent
-        @dragenter.prevent
       >
         <UCard class="h-full">
           <template #header>
@@ -76,7 +84,13 @@
             </div>
           </template>
 
-          <div class="space-y-3 min-h-[400px]">
+          <div 
+            class="space-y-3 min-h-[400px] drop-zone"
+            @drop="handleDrop($event, column.status)"
+            @dragover.prevent="handleDragOver($event)"
+            @dragenter.prevent="handleDragEnter($event)"
+            @dragleave="handleDragLeave($event)"
+          >
             <TaskCard
               v-for="task in tasksByStatus(column.status)"
               :key="task.id"
@@ -252,7 +266,9 @@ const props = defineProps<{
 
 const scrumBoard = useScrumBoardStore();
 const freeloTasks = useFreeloTasks();
+const freeloProjects = useFreeloProjects();
 const auth = useFreeloAuth();
+const firestoreTasks = useFirestoreTasks();
 
 // Filter tasks by project
 const projectTasks = computed(() => {
@@ -325,38 +341,76 @@ async function addTask() {
     return;
   }
   
-  // Prepare task data with proper dueDate conversion
-  const taskData: any = {
-    title: newTask.value.title,
-    description: newTask.value.description,
-    priority: newTask.value.priority,
-    assignee: newTask.value.assignee,
-    storyPoints: newTask.value.storyPoints,
-    status: 'todo',
-    projectId: props.projectId
-  };
-  
-  // Convert dueDate string to Date if provided
-  if (newTask.value.dueDate) {
-    taskData.dueDate = new Date(newTask.value.dueDate);
+  try {
+    // Získat Freelo project ID
+    const freeloProjectId = getFreeloProjectId(props.projectId);
+    if (!freeloProjectId) {
+      alert('Neplatné ID projektu. Úkol musí být vytvořen v existujícím Freelo projektu.');
+      return;
+    }
+    
+    // Načíst detail projektu pro získání tasklist ID
+    const projectDetail = await freeloProjects.fetchProjectById(freeloProjectId);
+    if (!projectDetail || !projectDetail.tasklists || projectDetail.tasklists.length === 0) {
+      alert('Projekt nemá žádné tasklisty. Vytvořte tasklist v Freelo aplikaci.');
+      return;
+    }
+    
+    // Použít první tasklist (v produkci bychom měli nechat uživatele vybrat)
+    const tasklistId = projectDetail.tasklists[0].id;
+    
+    // Převést priority na Freelo formát
+    const priorityMap: Record<string, 'l' | 'm' | 'h'> = {
+      'low': 'l',
+      'medium': 'm',
+      'high': 'h'
+    };
+    
+    // Připravit data pro Freelo API
+    const freeloTaskData: any = {
+      name: newTask.value.title,
+      priority_enum: priorityMap[newTask.value.priority] || 'm',
+    };
+    
+    // Přidat due_date pokud je zadán
+    if (newTask.value.dueDate) {
+      const dueDate = new Date(newTask.value.dueDate);
+      freeloTaskData.due_date = dueDate.toISOString();
+    }
+    
+    // Přidat komentář jako description pokud je zadán
+    if (newTask.value.description) {
+      freeloTaskData.comment = {
+        content: newTask.value.description
+      };
+    }
+    
+    // TODO: Převést assignee (řešitel) na worker ID - vyžaduje načtení seznamu uživatelů z Freelo
+    
+    // Vytvořit úkol přes Freelo API
+    await freeloTasks.createTask(freeloProjectId, tasklistId, freeloTaskData);
+    
+    // Reset form
+    newTask.value = {
+      title: '',
+      description: '',
+      priority: 'medium',
+      assignee: '',
+      storyPoints: 0,
+      status: 'todo',
+      dueDate: ''
+    };
+    
+    showAddTaskModal.value = false;
+    
+    // Znovu načíst úkoly z Freelo
+    await loadTasksFromFreelo();
+    
+    alert('Úkol byl úspěšně vytvořen v Freelo!');
+  } catch (error: any) {
+    console.error('[ScrumBoard] Error creating task:', error);
+    alert('Chyba při vytváření úkolu: ' + (error.message || 'Neznámá chyba'));
   }
-  
-  // Poznámka: Vytváření úkolů přes Freelo API vyžaduje tasklist ID
-  // Pro jednoduchost zobrazíme upozornění
-  alert('Vytváření úkolů je momentálně dostupné pouze v Freelo aplikaci. Úkoly se načítají automaticky z vašeho Freelo účtu.');
-  
-  // Reset form
-  newTask.value = {
-    title: '',
-    description: '',
-    priority: 'medium',
-    assignee: '',
-    storyPoints: 0,
-    status: 'todo',
-    dueDate: ''
-  };
-  
-  showAddTaskModal.value = false;
 }
 
 function editTask(task: TaskItem) {
@@ -373,18 +427,56 @@ function editTask(task: TaskItem) {
 async function updateTask() {
   if (!editingTask.value) return;
   
-  // Prepare updates with proper dueDate conversion
-  const updates: any = { ...editingTask.value };
-  
-  // Convert dueDate string back to Date if it's a string
-  if (updates.dueDate && typeof updates.dueDate === 'string') {
-    updates.dueDate = new Date(updates.dueDate);
+  try {
+    const taskId = editingTask.value.id;
+    const freeloUpdates: any = {};
+    
+    // Převést změny na formát Freelo API
+    if (editingTask.value.title) {
+      freeloUpdates.name = editingTask.value.title;
+    }
+    
+    // Převést dueDate na ISO formát pro Freelo
+    if (editingTask.value.dueDate) {
+      const dueDate = typeof editingTask.value.dueDate === 'string' 
+        ? new Date(editingTask.value.dueDate)
+        : editingTask.value.dueDate;
+      freeloUpdates.due_date = dueDate.toISOString();
+    }
+    
+    // Převést priority na Freelo formát
+    if (editingTask.value.priority) {
+      const priorityMap: Record<string, 'l' | 'm' | 'h'> = {
+        'low': 'l',
+        'medium': 'm',
+        'high': 'h'
+      };
+      freeloUpdates.priority_enum = priorityMap[editingTask.value.priority] || 'm';
+    }
+    
+    // TODO: Převést assignee (řešitel) na worker ID - vyžaduje načtení seznamu uživatelů z Freelo
+    
+    // Aktualizovat úkol přes Freelo API
+    await freeloTasks.updateTask(taskId, freeloUpdates);
+    
+    // Aktualizovat lokální stav
+    scrumBoard.updateTask(taskId, {
+      title: editingTask.value.title,
+      description: editingTask.value.description,
+      priority: editingTask.value.priority,
+      assignee: editingTask.value.assignee,
+      dueDate: editingTask.value.dueDate ? (typeof editingTask.value.dueDate === 'string' ? new Date(editingTask.value.dueDate) : editingTask.value.dueDate) : undefined,
+    });
+    
+    // Znovu načíst úkoly z Freelo pro synchronizaci
+    await loadTasksFromFreelo();
+    
+    showEditTaskModal.value = false;
+    editingTask.value = null;
+  } catch (error: any) {
+    console.error('[ScrumBoard] Error updating task:', error);
+    alert('Chyba při aktualizaci úkolu: ' + (error.message || 'Neznámá chyba'));
   }
-  
-  // Poznámka: Úprava úkolů přes Freelo API vyžaduje specifické endpointy
-  alert('Úprava úkolů je momentálně dostupná pouze v Freelo aplikaci.');
-  showEditTaskModal.value = false;
-  editingTask.value = null;
 }
 
 async function deleteTask(taskId: string) {
@@ -395,16 +487,233 @@ async function deleteTask(taskId: string) {
 }
 
 async function moveTask(taskId: string, newStatus: string) {
-  // Poznámka: Změna stavu úkolu přes Freelo API
-  alert('Změna stavu úkolu je momentálně dostupná pouze v Freelo aplikaci.');
+  try {
+    const task = scrumBoard.tasks.find(t => t.id === taskId);
+    if (!task) {
+      console.warn('[ScrumBoard] Task not found:', taskId);
+      return;
+    }
+    
+    if (newStatus === 'done') {
+      await freeloTasks.finishTask(taskId);
+    } else if (newStatus === 'todo') {
+      await freeloTasks.activateTask(taskId);
+    } else {
+      await freeloTasks.updateTask(taskId, { state_id: 1 });
+    }
+    
+    // Aktualizovat lokální stav
+    scrumBoard.updateTaskStatus(taskId, newStatus as 'todo' | 'in-progress' | 'done');
+    
+    // Znovu načíst úkoly z Freelo pro synchronizaci
+    await loadTasksFromFreelo();
+  } catch (error: any) {
+    console.error('[ScrumBoard] Error moving task:', error);
+    alert('Chyba při změně stavu úkolu: ' + (error.message || 'Neznámá chyba'));
+  }
+}
+
+function handleDragOver(event: DragEvent) {
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+}
+
+function handleDragEnter(event: DragEvent) {
+  event.preventDefault();
+  if (event.currentTarget instanceof HTMLElement) {
+    event.currentTarget.classList.add('drag-over');
+  }
+}
+
+function handleDragLeave(event: DragEvent) {
+  // Zkontrolovat, jestli opouštíme skutečně drop zónu (ne jen child element)
+  if (event.currentTarget instanceof HTMLElement) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX;
+    const y = event.clientY;
+    
+    // Pokud jsme stále uvnitř elementu, neodstraňovat třídu
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+      return;
+    }
+    
+    event.currentTarget.classList.remove('drag-over');
+  }
 }
 
 async function handleDrop(event: DragEvent, targetStatus: string) {
   event.preventDefault();
+  event.stopPropagation();
   
-  if (event.dataTransfer) {
-    const taskId = event.dataTransfer.getData('text/plain');
-    await firestoreTasks.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
+  console.log('[ScrumBoard] ===== handleDrop CALLED =====');
+  console.log('[ScrumBoard] Target status:', targetStatus);
+  
+  // Odstranit drag-over třídu
+  if (event.currentTarget instanceof HTMLElement) {
+    event.currentTarget.classList.remove('drag-over');
+  }
+  
+  if (!event.dataTransfer) {
+    console.warn('[ScrumBoard] No dataTransfer in drop event');
+    return;
+  }
+  
+  const taskId = event.dataTransfer.getData('text/plain');
+  
+  if (!taskId) {
+    console.warn('[ScrumBoard] No task ID in dataTransfer');
+    return;
+  }
+  
+  console.log('[ScrumBoard] ===== Dropping task =====');
+  console.log('[ScrumBoard] Task ID:', taskId);
+  console.log('[ScrumBoard] Target status:', targetStatus);
+  
+  // Najít úkol před try blokem, aby byl dostupný i v catch bloku
+  const task = scrumBoard.tasks.find(t => t.id === taskId);
+  if (!task) {
+    console.warn('[ScrumBoard] Task not found:', taskId);
+    alert('Úkol nebyl nalezen. Zkuste obnovit stránku.');
+    return;
+  }
+  
+  // Uložit původní stav pro rollback
+  const originalStatus = task.status;
+  
+  try {
+    // Zkontrolovat, jestli se stav skutečně změnil
+    if (task.status === targetStatus) {
+      console.log('[ScrumBoard] Task already in target status, skipping');
+      return;
+    }
+    
+    console.log('[ScrumBoard] Current status:', task.status);
+    console.log('[ScrumBoard] Target status:', targetStatus);
+    
+    // HYBRIDNÍ PŘÍSTUP: Uložit stav do Firebase (jako předtím) + volitelně synchronizovat s Freelo
+    const firestoreTasks = useFirestoreTasks();
+    
+    // 1. Nejdřív aktualizovat stav v lokálním store (okamžitá UI aktualizace)
+    console.log('[ScrumBoard] Updating local state...');
+    scrumBoard.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
+    
+    // 2. Uložit stav do Firebase (jako předtím - spolehlivé)
+    if (task.id.startsWith('freelo-')) {
+      // Pro Freelo úkoly: uložit stav do Firebase pod freeloId
+      // Pokud úkol nemá záznam v Firebase, vytvořit ho
+      console.log('[ScrumBoard] Saving status to Firebase for Freelo task...');
+      try {
+        // Zkusit najít úkol v Firebase podle freeloId
+        const freeloId = task.id.replace('freelo-', '');
+        // Pro Freelo úkoly ukládáme stav do Firebase
+        // Použijeme updateTaskStatus, který funguje pro všechny úkoly
+        await firestoreTasks.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
+        console.log('[ScrumBoard] ✅ Status saved to Firebase');
+      } catch (error: any) {
+        console.warn('[ScrumBoard] ⚠️ Could not save to Firebase (task might not exist there):', error.message);
+        // Pokud úkol není v Firebase, není to chyba - pokračovat
+      }
+    } else {
+      // Pro normální úkoly: uložit do Firebase (jako předtím)
+      console.log('[ScrumBoard] Saving status to Firebase...');
+      await firestoreTasks.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
+      console.log('[ScrumBoard] ✅ Status saved to Firebase');
+    }
+    
+    // 3. Volitelně synchronizovat s Freelo API (v pozadí, neblokuje UI)
+    if (task.id.startsWith('freelo-')) {
+      console.log('[ScrumBoard] Syncing status with Freelo API (background)...');
+      // Spustit synchronizaci s Freelo v pozadí (nečekat na výsledek)
+      syncWithFreeloInBackground(task.id, targetStatus).catch(error => {
+        console.warn('[ScrumBoard] ⚠️ Background sync with Freelo failed (non-critical):', error.message);
+      });
+    }
+    
+    console.log('[ScrumBoard] ===== Task status updated successfully =====');
+  } catch (error: any) {
+    console.error('[ScrumBoard] ❌ Error updating task status:', error);
+    
+    // Vrátit úkol zpět do původního stavu v UI (rollback)
+    if (task && originalStatus) {
+      scrumBoard.updateTaskStatus(taskId, originalStatus as 'todo' | 'in-progress' | 'done');
+    }
+    
+    // Zobrazit uživatelsky přívětivou chybovou zprávu
+    const errorMessage = error.message || 'Neznámá chyba';
+    alert('Chyba při aktualizaci stavu úkolu: ' + errorMessage);
+  }
+}
+
+// Pomocná funkce pro synchronizaci s Freelo v pozadí
+// Tato synchronizace je VOLITELNÁ - pokud selže, není to problém (stav je v Firebase)
+async function syncWithFreeloInBackground(taskId: string, targetStatus: string) {
+  try {
+    console.log('[ScrumBoard] [Background] Syncing with Freelo (optional):', taskId, '→', targetStatus);
+    
+    if (targetStatus === 'done') {
+      await freeloTasks.finishTask(taskId);
+      console.log('[ScrumBoard] [Background] ✅ Freelo: Task finished');
+    } else if (targetStatus === 'in-progress') {
+      // Zkontrolovat, jestli úkol není finished (pak ho musíme aktivovat)
+      try {
+        const taskDetail = await freeloTasks.fetchTaskDetail(taskId);
+        if (taskDetail?.state?.state === 'finished') {
+          await freeloTasks.activateTask(taskId);
+          console.log('[ScrumBoard] [Background] ✅ Freelo: Task activated');
+        }
+      } catch (error: any) {
+        // Pokud se nepodaří načíst detail, zkusit přidat label (možná už je active)
+        console.log('[ScrumBoard] [Background] Could not fetch task detail, trying to add label anyway');
+      }
+      
+      try {
+        await freeloTasks.addInProgressLabel(taskId);
+        console.log('[ScrumBoard] [Background] ✅ Freelo: In-progress label added');
+      } catch (error: any) {
+        // Pokud přidání labelu selže, zkontrolovat, jestli už neexistuje
+        try {
+          const taskDetail = await freeloTasks.fetchTaskDetail(taskId);
+          const hasLabel = taskDetail?.labels?.some(
+            (label: any) => label.name?.toLowerCase() === 'in progress' || label.name?.toLowerCase() === 'in-progress'
+          );
+          if (hasLabel) {
+            console.log('[ScrumBoard] [Background] ✅ Freelo: Label already exists (OK)');
+          } else {
+            console.warn('[ScrumBoard] [Background] ⚠️ Freelo: Could not add label (non-critical)');
+          }
+        } catch {
+          console.warn('[ScrumBoard] [Background] ⚠️ Freelo: Could not verify label (non-critical)');
+        }
+      }
+    } else if (targetStatus === 'todo') {
+      // Zkontrolovat, jestli úkol není finished (pak ho musíme aktivovat)
+      try {
+        const taskDetail = await freeloTasks.fetchTaskDetail(taskId);
+        if (taskDetail?.state?.state === 'finished') {
+          await freeloTasks.activateTask(taskId);
+          console.log('[ScrumBoard] [Background] ✅ Freelo: Task activated');
+        }
+      } catch (error: any) {
+        console.log('[ScrumBoard] [Background] Could not fetch task detail, trying to remove label anyway');
+      }
+      
+      try {
+        await freeloTasks.removeInProgressLabel(taskId);
+        console.log('[ScrumBoard] [Background] ✅ Freelo: In-progress label removed');
+      } catch (error: any) {
+        // Pokud odstranění labelu selže, není to problém (možná label neexistuje)
+        console.log('[ScrumBoard] [Background] ⚠️ Freelo: Could not remove label (might not exist, OK)');
+      }
+    }
+    
+    console.log('[ScrumBoard] [Background] ✅ Freelo sync completed');
+  } catch (error: any) {
+    // Toto je VOLITELNÁ synchronizace - chyby nejsou kritické
+    // Stav je už uložen v Firebase, takže uživatel nevidí žádný problém
+    console.log('[ScrumBoard] [Background] ⚠️ Freelo sync failed (non-critical, state is saved in Firebase):', error.message);
+    // NELOGOVAT jako error - jen jako info/warning
   }
 }
 
@@ -419,21 +728,41 @@ onMounted(async () => {
 // Load tasks from Freelo API
 const loadTasksFromFreelo = async () => {
   try {
+    scrumBoard.setLoading(true);
+    
     const freeloProjectId = getFreeloProjectId(props.projectId);
     if (!freeloProjectId) {
       console.warn('[ScrumBoard] Invalid Freelo project ID:', props.projectId);
+      scrumBoard.setLoading(false);
       return;
     }
 
     // Získat ID přihlášeného uživatele pro filtrování úkolů
     const workerId = auth.user.value?.id;
     
-    console.log('[ScrumBoard] Loading tasks from Freelo for project:', freeloProjectId, workerId ? `(filtered by user ${workerId})` : '(all tasks)');
+    console.log('[ScrumBoard] ===== Loading tasks from Freelo =====');
+    console.log('[ScrumBoard] Project ID:', freeloProjectId);
+    console.log('[ScrumBoard] Worker ID:', workerId || 'all tasks');
+    
     const tasks = await freeloTasks.syncTasksForProject(freeloProjectId, workerId);
+    
+    // Debug: zkontrolovat stavy načtených úkolů
+    const tasksByStatus = {
+      todo: tasks.filter(t => t.status === 'todo').length,
+      inProgress: tasks.filter(t => t.status === 'in-progress').length,
+      done: tasks.filter(t => t.status === 'done').length
+    };
+    
+    console.log('[ScrumBoard] Tasks loaded by status:', tasksByStatus);
+    console.log('[ScrumBoard] Sample tasks:', tasks.slice(0, 3).map(t => ({
+      id: t.id,
+      title: t.title,
+      status: t.status
+    })));
     
     // Update store with tasks
     scrumBoard.setTasks(tasks);
-    console.log('[ScrumBoard] Loaded', tasks.length, 'tasks from Freelo');
+    console.log('[ScrumBoard] ✅ Loaded', tasks.length, 'tasks from Freelo');
     
     if (tasks.length === 0 && workerId) {
       console.log('[ScrumBoard] No tasks found. This might mean:');
@@ -441,9 +770,17 @@ const loadTasksFromFreelo = async () => {
       console.log('  - Try loading all tasks (remove worker_id filter)');
     }
   } catch (error: any) {
-    console.error('[ScrumBoard] Error loading tasks from Freelo:', error);
+    console.error('[ScrumBoard] ❌ Error loading tasks from Freelo:', error);
     alert('Chyba při načítání úkolů: ' + (error.message || 'Neznámá chyba'));
+  } finally {
+    scrumBoard.setLoading(false);
   }
+};
+
+// Refresh tasks manually
+const refreshTasks = async () => {
+  console.log('[ScrumBoard] Manual refresh requested');
+  await loadTasksFromFreelo();
 };
 
 // Watch for authentication changes
@@ -470,6 +807,17 @@ watch(() => props.projectId, async (newProjectId) => {
 <style scoped>
 .column {
   min-height: 500px;
+}
+
+.drop-zone {
+  transition: background-color 0.2s, border-color 0.2s;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.drop-zone.drag-over {
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 2px dashed #3b82f6;
 }
 
 .scrum-board {

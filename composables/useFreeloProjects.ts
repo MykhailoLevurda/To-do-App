@@ -159,14 +159,35 @@ export const useFreeloProjects = () => {
       
       // Převod Freelo projektů na formát používaný v aplikaci
       const projects = freeloProjects.map((fp: FreeloProject) => {
-        console.log('[Freelo Projects] Processing project:', fp.id, fp.name);
+        console.log('[Freelo Projects] Processing project:', fp.id, fp.name, 'state:', fp.state);
+        
+        // Správné mapování stavu projektu
+        // Freelo API: state.id 1 = active, 2 = archived, 3 = template
+        // state.state = "active" | "archived" | "template"
+        let projectStatus: 'active' | 'archived' = 'active';
+        
+        if (fp.state) {
+          // Pokud má state objekt, použít jeho hodnotu
+          if (fp.state.state === 'archived' || fp.state.id === 2) {
+            projectStatus = 'archived';
+          } else if (fp.state.state === 'active' || fp.state.id === 1) {
+            projectStatus = 'active';
+          } else {
+            // Pro template nebo jiné stavy - považovat za active
+            projectStatus = 'active';
+          }
+        } else {
+          // Pokud není state objekt, považovat za active (default)
+          projectStatus = 'active';
+        }
+        
         return {
           id: `freelo-${fp.id}`, // Prefix pro rozlišení od Firestore projektů
           name: fp.name,
           description: '', // Freelo API neposkytuje description v základním endpointu
           color: generateColorFromId(fp.id),
           createdBy: fp.owner?.id?.toString() || 'unknown',
-          status: fp.state?.state === 'active' ? 'active' : 'archived',
+          status: projectStatus,
           taskCount: fp.tasklists?.length || 0,
           teamMembers: [], // Budeme muset načíst z jiného endpointu
           createdAt: new Date(fp.date_add),
@@ -190,6 +211,73 @@ export const useFreeloProjects = () => {
   };
 
   /**
+   * Načte detail projektu podle ID z Freelo API
+   */
+  const fetchProjectById = async (projectId: number | string): Promise<FreeloProject | null> => {
+    try {
+      // Extrahovat čisté ID z formátu "freelo-123"
+      const cleanProjectId = typeof projectId === 'string' && projectId.startsWith('freelo-')
+        ? parseInt(projectId.replace('freelo-', ''))
+        : projectId;
+
+      console.log('[Freelo Projects] Fetching project detail for ID:', cleanProjectId);
+      
+      // Freelo API endpoint pro detail projektu: /project/{id} (singular!)
+      // Pokud selže, zkusit načíst ze seznamu projektů
+      try {
+        const response = await freeloFetch<any>(`/project/${cleanProjectId}`);
+        
+        console.log('[Freelo Projects] Project detail response:', response);
+        
+        // Freelo API může vracet buď přímo objekt, nebo objekt s project property
+        if (response && response.id) {
+          return response as FreeloProject;
+        }
+        
+        if (response && response.project && response.project.id) {
+          return response.project as FreeloProject;
+        }
+        
+        // Možná je to paginated response
+        if (response && response.data && response.data.project && response.data.project.id) {
+          return response.data.project as FreeloProject;
+        }
+        
+        if (response && response.data && response.data.projects && Array.isArray(response.data.projects) && response.data.projects.length > 0) {
+          return response.data.projects[0] as FreeloProject;
+        }
+        
+        console.warn('[Freelo Projects] Unexpected project detail response structure');
+        return null;
+      } catch (error: any) {
+        // Pokud přímý fetch selže (404), zkusit načíst ze seznamu projektů
+        if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+          console.warn('[Freelo Projects] Direct project fetch failed (404), trying from projects list');
+          
+          // Načíst všechny projekty a najít ten s daným ID
+          const allProjects = await fetchAllProjects();
+          const project = allProjects.find(p => {
+            const projectFreeloId = typeof p.freeloId === 'number' ? p.freeloId : parseInt(String(p.freeloId || '').replace('freelo-', ''));
+            return projectFreeloId === cleanProjectId;
+          });
+          
+          if (project && project.freeloData) {
+            console.log('[Freelo Projects] Found project in projects list');
+            return project.freeloData as FreeloProject;
+          }
+          
+          console.warn('[Freelo Projects] Project not found in projects list:', cleanProjectId);
+          return null;
+        }
+        throw error;
+      }
+    } catch (error: any) {
+      console.error('[Freelo Projects] Error fetching project detail:', error);
+      throw error;
+    }
+  };
+
+  /**
    * Generuje barvu z ID (pro konzistentní zobrazení)
    */
   const generateColorFromId = (id: number): string => {
@@ -206,6 +294,7 @@ export const useFreeloProjects = () => {
     fetchAllProjects,
     fetchInvitedProjects,
     fetchArchivedProjects,
+    fetchProjectById,
     syncProjects,
   };
 };

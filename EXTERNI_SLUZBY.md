@@ -17,7 +17,8 @@ Freelo API podporuje dva způsoby autentizace:
 
 1. **Interaktivní přihlášení** (doporučeno pro produkci)
    - Uživatel zadá email a API klíč při přihlášení
-   - Credentials se ukládají do sessionStorage
+   - Credentials se ukládají do localStorage pro trvalé přihlášení
+   - Po zavření a znovu otevření aplikace je uživatel automaticky přihlášen
 
 2. **Automatické přihlášení z .env** (pro vývoj, volitelné)
    - Můžete nastavit credentials v `.env` souboru pro automatické přihlášení

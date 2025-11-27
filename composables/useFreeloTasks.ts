@@ -82,24 +82,46 @@ export const useFreeloTasks = () => {
         tasksCount: response.data?.tasks?.length || 0
       });
       
+      let tasks: FreeloTask[] = [];
+      
       // Možná je response přímo pole úkolů, ne paginated response
       if (Array.isArray(response)) {
         console.log('[Freelo Tasks] Response is array, returning directly');
-        return response;
+        tasks = response;
       }
-      
       // Nebo je to paginated response s data.tasks
-      if (response.data && response.data.tasks) {
-        return response.data.tasks;
+      else if (response.data && response.data.tasks) {
+        tasks = response.data.tasks;
       }
-      
       // Fallback - zkusit response.tasks
-      if ((response as any).tasks) {
-        return (response as any).tasks;
+      else if ((response as any).tasks) {
+        tasks = (response as any).tasks;
+      }
+      else {
+        console.warn('[Freelo Tasks] Unexpected response structure:', response);
+        return [];
       }
       
-      console.warn('[Freelo Tasks] Unexpected response structure:', response);
-      return [];
+      // Debug: zkontrolovat, jestli úkoly mají labely
+      console.log('[Freelo Tasks] Checking labels in tasks...');
+      const tasksWithLabels = tasks.filter(t => t.labels && t.labels.length > 0);
+      const tasksWithInProgressLabel = tasks.filter(t => 
+        t.labels?.some(l => l.name?.toLowerCase() === 'in progress' || l.name?.toLowerCase() === 'in-progress')
+      );
+      
+      console.log('[Freelo Tasks] Tasks summary:', {
+        total: tasks.length,
+        withLabels: tasksWithLabels.length,
+        withInProgressLabel: tasksWithInProgressLabel.length,
+        sampleTask: tasks[0] ? {
+          id: tasks[0].id,
+          name: tasks[0].name,
+          state: tasks[0].state?.state,
+          labels: tasks[0].labels?.map(l => l.name) || []
+        } : null
+      });
+      
+      return tasks;
     } catch (error: any) {
       console.error('[Freelo Tasks] Error fetching tasks by project:', error);
       throw error;
@@ -129,14 +151,35 @@ export const useFreeloTasks = () => {
    */
   const convertFreeloTaskToAppTask = (freeloTask: FreeloTask) => {
     // Mapování stavů Freelo na stavy aplikace
-    const stateMap: Record<string, 'todo' | 'in-progress' | 'done'> = {
-      'active': 'todo',
-      'in-progress': 'in-progress',
-      'finished': 'done',
-      'done': 'done',
-    };
-
-    const appStatus = stateMap[freeloTask.state?.state || 'active'] || 'todo';
+    // Freelo používá:
+    // - state.state = "active" + žádný label "In progress" → todo
+    // - state.state = "active" + label "In progress" → in-progress
+    // - state.state = "finished" → done
+    
+    let appStatus: 'todo' | 'in-progress' | 'done' = 'todo';
+    
+    // Debug: logovat stav úkolu z Freelo
+    const taskLabels = freeloTask.labels || [];
+    const hasInProgressLabel = taskLabels.some(
+      label => label.name?.toLowerCase() === 'in progress' || label.name?.toLowerCase() === 'in-progress'
+    );
+    
+    console.log('[Freelo Tasks] Converting task:', {
+      id: freeloTask.id,
+      name: freeloTask.name,
+      state: freeloTask.state?.state,
+      labels: taskLabels.map(l => l.name),
+      hasInProgressLabel: hasInProgressLabel
+    });
+    
+    if (freeloTask.state?.state === 'finished') {
+      appStatus = 'done';
+    } else if (freeloTask.state?.state === 'active') {
+      // Zkontrolovat, jestli má label "In progress"
+      appStatus = hasInProgressLabel ? 'in-progress' : 'todo';
+    }
+    
+    console.log('[Freelo Tasks] Mapped status:', appStatus, 'for task', freeloTask.id);
 
     // Převod priority
     let priority: 'low' | 'medium' | 'high' = 'medium';
@@ -178,16 +221,396 @@ export const useFreeloTasks = () => {
         ? parseInt(projectId.replace('freelo-', ''))
         : projectId;
 
+      console.log('[Freelo Tasks] ===== Starting sync for project =====', cleanProjectId);
+      
       const freeloTasks = await fetchTasksByProject(cleanProjectId, workerId);
       
-      // Převod na formát aplikace
-      const tasks = freeloTasks.map(convertFreeloTaskToAppTask);
+      // DŮLEŽITÉ: Zkontrolovat, jestli úkoly mají labely
+      // Endpoint /all-tasks by měl vracet labely, ale někdy je nevrací
+      // Pokud ne, načíst detail každého úkolu zvlášť (endpoint /task/{id} vrací labely jistě)
+      const tasksWithoutLabels = freeloTasks.filter(t => !t.labels || t.labels.length === 0);
+      const tasksWithLabels = freeloTasks.filter(t => t.labels && t.labels.length > 0);
       
-      console.log(`[Freelo Tasks] Synced ${tasks.length} tasks for project ${cleanProjectId}${workerId ? ` (filtered by worker ${workerId})` : ''}`);
+      console.log('[Freelo Tasks] Tasks with labels from /all-tasks:', tasksWithLabels.length);
+      console.log('[Freelo Tasks] Tasks without labels from /all-tasks:', tasksWithoutLabels.length);
       
-      return tasks;
+      // Pokud některé úkoly nemají labely, načíst jejich detail zvlášť
+      // Toto je důležité pro správné mapování stavů (in-progress vs todo)
+      if (tasksWithoutLabels.length > 0) {
+        console.log('[Freelo Tasks] ⚠️ Some tasks are missing labels from /all-tasks endpoint');
+        console.log('[Freelo Tasks] Fetching details for', tasksWithoutLabels.length, 'tasks to get labels...');
+        console.log('[Freelo Tasks] This might be slow, but ensures correct status mapping');
+        
+        // Načíst detail pro úkoly bez labelů
+        // Použít Promise.allSettled místo Promise.all, aby se nepřerušilo načítání při chybě jednoho úkolu
+        const detailResults = await Promise.allSettled(
+          tasksWithoutLabels.map(async (task) => {
+            try {
+              const detail = await fetchTaskDetail(task.id);
+              if (detail) {
+                // Aktualizovat labely z detailu
+                return {
+                  ...task,
+                  labels: detail.labels || task.labels || []
+                };
+              }
+              return task;
+            } catch (error: any) {
+              console.warn('[Freelo Tasks] Could not fetch detail for task', task.id, ':', error.message);
+              return task;
+            }
+          })
+        );
+        
+        // Zpracovat výsledky
+        const tasksWithDetails = detailResults.map((result, index) => {
+          if (result.status === 'fulfilled') {
+            return result.value;
+          } else {
+            console.warn('[Freelo Tasks] Failed to fetch detail for task:', tasksWithoutLabels[index].id);
+            return tasksWithoutLabels[index];
+          }
+        });
+        
+        // Nahradit úkoly bez labelů úkoly s detailem
+        const allTasks = [
+          ...tasksWithLabels,
+          ...tasksWithDetails
+        ];
+        
+        // Znovu zkontrolovat labely
+        const finalTasksWithLabels = allTasks.filter(t => t.labels && t.labels.length > 0);
+        console.log('[Freelo Tasks] ✅ After fetching details:', finalTasksWithLabels.length, 'tasks have labels');
+        
+        // Převod na formát aplikace
+        const tasks = allTasks.map(convertFreeloTaskToAppTask);
+        
+        console.log(`[Freelo Tasks] ✅ Synced ${tasks.length} tasks for project ${cleanProjectId}${workerId ? ` (filtered by worker ${workerId})` : ''}`);
+        
+        return tasks;
+      } else {
+        // Všechny úkoly mají labely z /all-tasks, můžeme použít přímo
+        console.log('[Freelo Tasks] ✅ All tasks have labels from /all-tasks, no need to fetch details');
+        
+        // Převod na formát aplikace
+        const tasks = freeloTasks.map(convertFreeloTaskToAppTask);
+        
+        console.log(`[Freelo Tasks] ✅ Synced ${tasks.length} tasks for project ${cleanProjectId}${workerId ? ` (filtered by worker ${workerId})` : ''}`);
+        
+        return tasks;
+      }
     } catch (error: any) {
-      console.error('[Freelo Tasks] Sync error:', error);
+      console.error('[Freelo Tasks] ❌ Sync error:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Aktualizuje úkol přes Freelo API
+   * @param taskId - ID úkolu (může být string "freelo-123" nebo number)
+   * @param updates - Objekt s aktualizacemi
+   */
+  const updateTask = async (
+    taskId: number | string,
+    updates: {
+      name?: string;
+      due_date?: string;
+      due_date_end?: string;
+      worker?: number;
+      priority_enum?: 'l' | 'm' | 'h';
+      state_id?: number; // Pro změnu stavu (1 = active, 2 = finished)
+    }
+  ): Promise<FreeloTask | null> => {
+    try {
+      // Extrahovat čisté ID z formátu "freelo-123"
+      const cleanTaskId = typeof taskId === 'string' && taskId.startsWith('freelo-')
+        ? parseInt(taskId.replace('freelo-', ''))
+        : taskId;
+
+      // Freelo API očekává tělo ve formátu { task: { ... } }
+      const requestBody = {
+        task: updates
+      };
+      
+      console.log('[Freelo Tasks] Updating task:', cleanTaskId, 'with updates:', updates);
+      
+      const response = await freeloFetch<{ task: FreeloTask }>(
+        `/task/${cleanTaskId}`,
+        {
+          method: 'POST',
+          body: JSON.stringify(requestBody),
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      console.log('[Freelo Tasks] Task updated successfully:', response);
+
+      return response.task || (response as any);
+    } catch (error: any) {
+      console.error('[Freelo Tasks] Error updating task:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Aktivuje úkol (otevře zavřený úkol)
+   * @param taskId - ID úkolu
+   */
+  const activateTask = async (taskId: number | string): Promise<boolean> => {
+    try {
+      const cleanTaskId = typeof taskId === 'string' && taskId.startsWith('freelo-')
+        ? parseInt(taskId.replace('freelo-', ''))
+        : taskId;
+
+      await freeloFetch(`/task/${cleanTaskId}/activate`, {
+        method: 'POST'
+      });
+
+      return true;
+    } catch (error: any) {
+      console.error('[Freelo Tasks] Error activating task:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Dokončí úkol (zavře úkol)
+   * @param taskId - ID úkolu
+   */
+  const finishTask = async (taskId: number | string): Promise<boolean> => {
+    try {
+      const cleanTaskId = typeof taskId === 'string' && taskId.startsWith('freelo-')
+        ? parseInt(taskId.replace('freelo-', ''))
+        : taskId;
+
+      await freeloFetch(`/task/${cleanTaskId}/finish`, {
+        method: 'POST'
+      });
+
+      return true;
+    } catch (error: any) {
+      console.error('[Freelo Tasks] Error finishing task:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Přidá komentář k úkolu
+   * @param taskId - ID úkolu
+   * @param content - Obsah komentáře
+   */
+  const addComment = async (taskId: number | string, content: string): Promise<any> => {
+    try {
+      const cleanTaskId = typeof taskId === 'string' && taskId.startsWith('freelo-')
+        ? parseInt(taskId.replace('freelo-', ''))
+        : taskId;
+
+      const response = await freeloFetch(`/task/${cleanTaskId}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          comment: {
+            content: content
+          }
+        }),
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      return response;
+    } catch (error: any) {
+      console.error('[Freelo Tasks] Error adding comment:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Přidá label "In progress" k úkolu
+   */
+  const addInProgressLabel = async (taskId: number | string): Promise<boolean> => {
+    try {
+      const cleanTaskId = typeof taskId === 'string' && taskId.startsWith('freelo-')
+        ? parseInt(taskId.replace('freelo-', ''))
+        : taskId;
+
+      console.log('[Freelo Tasks] ===== addInProgressLabel CALLED =====');
+      console.log('[Freelo Tasks] Original taskId:', taskId);
+      console.log('[Freelo Tasks] Clean taskId:', cleanTaskId);
+      
+      if (!cleanTaskId || isNaN(Number(cleanTaskId))) {
+        throw new Error(`Invalid task ID: ${taskId} (cleaned: ${cleanTaskId})`);
+      }
+      
+      const requestBody = {
+        labels: [{
+          name: 'In progress',
+          color: '#f2830b'
+        }]
+      };
+      
+      console.log('[Freelo Tasks] Request body:', JSON.stringify(requestBody));
+      console.log('[Freelo Tasks] Calling freeloFetch with endpoint: /task-labels/add-to-task/' + cleanTaskId);
+      
+      const endpoint = `/task-labels/add-to-task/${cleanTaskId}`;
+      console.log('[Freelo Tasks] Full endpoint:', endpoint);
+      
+      const response = await freeloFetch(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(requestBody),
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('[Freelo Tasks] ✅ Label added successfully:', response);
+      return true;
+    } catch (error: any) {
+      // Pokud je to volané z background sync, logovat jen jako warning
+      const isBackgroundSync = error.stack?.includes('syncWithFreeloInBackground') || false;
+      
+      if (isBackgroundSync) {
+        console.log('[Freelo Tasks] ⚠️ Could not add in-progress label (background sync, non-critical):', error.message);
+      } else {
+        console.error('[Freelo Tasks] ❌ Error adding in-progress label:', error);
+        console.error('[Freelo Tasks] Error details:', {
+          taskId,
+          cleanTaskId: typeof taskId === 'string' && taskId.startsWith('freelo-')
+            ? parseInt(taskId.replace('freelo-', ''))
+            : taskId,
+          errorMessage: error.message,
+          errorStack: error.stack,
+          errorName: error.name,
+          errorCause: error.cause
+        });
+      }
+      
+      // Přidat více informací o chybě
+      if (error.message) {
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+          throw new Error('Síťová chyba: Nelze se připojit k serveru. Zkontrolujte připojení k internetu.');
+        } else if (error.message.includes('401') || error.message.includes('credentials')) {
+          throw new Error('Chyba autentizace: Neplatné přihlašovací údaje. Zkuste se znovu přihlásit.');
+        } else if (error.message.includes('404')) {
+          throw new Error('Endpoint nebyl nalezen. Zkontrolujte, že server běží správně.');
+        } else if (error.message.includes('500')) {
+          throw new Error('Chyba serveru: Server vrátil chybu 500. Zkontrolujte server logy.');
+        }
+      }
+      
+      throw error;
+    }
+  };
+
+  /**
+   * Odstraní label "In progress" z úkolu
+   */
+  const removeInProgressLabel = async (taskId: number | string): Promise<boolean> => {
+    try {
+      const cleanTaskId = typeof taskId === 'string' && taskId.startsWith('freelo-')
+        ? parseInt(taskId.replace('freelo-', ''))
+        : taskId;
+
+      // Nejdřív načíst úkol, abychom získali UUID labelu
+      const task = await fetchTaskDetail(cleanTaskId);
+      if (!task || !task.labels) {
+        // Úkol nemá žádné labely, není co odstraňovat - to je OK
+        console.log('[Freelo Tasks] Task has no labels, nothing to remove');
+        return true;
+      }
+
+      const inProgressLabel = task.labels.find(
+        label => label.name?.toLowerCase() === 'in progress' || label.name?.toLowerCase() === 'in-progress'
+      );
+
+      if (!inProgressLabel || !inProgressLabel.uuid) {
+        // Label "In progress" neexistuje - to je OK, není co odstraňovat
+        console.log('[Freelo Tasks] Task does not have "In progress" label, nothing to remove');
+        return true;
+      }
+
+      await freeloFetch(`/task-labels/remove-from-task/${cleanTaskId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          labels: [{
+            uuid: inProgressLabel.uuid
+          }]
+        }),
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      return true;
+    } catch (error: any) {
+      console.error('[Freelo Tasks] Error removing in-progress label:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Načte detail úkolu včetně komentářů
+   * @param taskId - ID úkolu
+   */
+  const fetchTaskDetail = async (taskId: number | string): Promise<FreeloTask | null> => {
+    try {
+      const cleanTaskId = typeof taskId === 'string' && taskId.startsWith('freelo-')
+        ? parseInt(taskId.replace('freelo-', ''))
+        : taskId;
+
+      const response = await freeloFetch<{ task: FreeloTask } | FreeloTask>(
+        `/task/${cleanTaskId}`
+      );
+
+      // Freelo API může vracet buď { task: ... } nebo přímo task
+      if ((response as any).task) {
+        return (response as any).task;
+      }
+      return response as FreeloTask;
+    } catch (error: any) {
+      console.error('[Freelo Tasks] Error fetching task detail:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Vytvoří nový úkol v Freelo
+   * @param projectId - ID projektu
+   * @param tasklistId - ID tasklistu (povinné)
+   * @param taskData - Data úkolu
+   */
+  const createTask = async (
+    projectId: number,
+    tasklistId: number,
+    taskData: {
+      name: string;
+      due_date?: string;
+      due_date_end?: string;
+      worker?: number;
+      priority_enum?: 'l' | 'm' | 'h';
+      comment?: {
+        content: string;
+      };
+    }
+  ): Promise<FreeloTask | null> => {
+    try {
+      const response = await freeloFetch<{ task: FreeloTask }>(
+        `/project/${projectId}/tasklist/${tasklistId}/tasks`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            task: taskData
+          }),
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      return response.task || (response as any);
+    } catch (error: any) {
+      console.error('[Freelo Tasks] Error creating task:', error);
       throw error;
     }
   };
@@ -198,6 +621,14 @@ export const useFreeloTasks = () => {
     fetchTasksByTasklist,
     convertFreeloTaskToAppTask,
     syncTasksForProject,
+    updateTask,
+    activateTask,
+    finishTask,
+    addComment,
+    fetchTaskDetail,
+    createTask,
+    addInProgressLabel,
+    removeInProgressLabel,
   };
 };
 
