@@ -40,7 +40,8 @@ export default defineNuxtConfig({
     },
     // Zlepšit handling při restartu
     devServer: {
-      watch: []
+      watch: [],
+      port: 3000
     },
     // Workaround pro srvx problém
     compatibilityDate: '2024-01-01',
@@ -49,7 +50,8 @@ export default defineNuxtConfig({
   },
   // Zlepšit handling při restartu dev serveru
   devServer: {
-    port: 3000
+    port: 3000,
+    host: 'localhost'
   },
   devtools: { enabled: true },
   colorMode: {

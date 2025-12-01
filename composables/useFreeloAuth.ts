@@ -87,17 +87,46 @@ export const useFreeloAuth = () => {
 
   /**
    * Kontrola, zda je uživatel přihlášen
-   * Obnoví uživatele z Firestore, ale neověřuje credentials
+   * Obnoví uživatele z Firestore a získá user ID z API
    */
   const checkAuth = async () => {
     const credentials = await getCredentials();
     if (credentials && !user.value) {
-      // Obnovení uživatele z credentials (bez ověření)
-      // Skutečné ověření proběhne při prvním API volání
-      user.value = {
+      // Obnovení uživatele z credentials
+      const freeloUser: FreeloUser = {
         email: credentials.email,
         displayName: credentials.email.split('@')[0],
       };
+      
+      // Zkusit získat user ID z API (z projektů)
+      try {
+        const projects = await freeloFetch<any[]>('/projects?order_by=name&order=asc');
+        if (projects && projects.length > 0 && projects[0].owner) {
+          freeloUser.id = projects[0].owner.id;
+          console.log('[Freelo Auth] User ID obtained from projects:', freeloUser.id);
+        }
+      } catch (error: any) {
+        console.warn('[Freelo Auth] Could not fetch user ID from projects:', error.message);
+        // Pokračovat bez user ID - může být získán později
+      }
+      
+      user.value = freeloUser;
+    } else if (credentials && user.value && !user.value.id) {
+      // Pokud uživatel existuje, ale nemá ID, zkusit ho získat
+      try {
+        const projects = await freeloFetch<any[]>('/projects?order_by=name&order=asc');
+        if (projects && projects.length > 0 && projects[0].owner) {
+          // Aktualizovat user ID - vytvořit nový objekt (user je useState, ne readonly uvnitř composable)
+          const currentUser = user.value;
+          user.value = {
+            ...currentUser,
+            id: projects[0].owner.id
+          };
+          console.log('[Freelo Auth] User ID obtained from projects:', user.value.id);
+        }
+      } catch (error: any) {
+        console.warn('[Freelo Auth] Could not fetch user ID from projects:', error.message);
+      }
     }
     return !!user.value;
   };
@@ -171,6 +200,80 @@ export const useFreeloAuth = () => {
     autoSignIn();
   }
 
+  /**
+   * Získá nebo aktualizuje user ID z API
+   */
+  const ensureUserId = async (): Promise<number | null> => {
+    if (user.value?.id) {
+      console.log('[Freelo Auth] User ID already exists:', user.value.id);
+      return user.value.id;
+    }
+    
+    console.log('[Freelo Auth] Fetching user ID from API...');
+    
+    try {
+      // Zkusit získat z projektů
+      const projects = await freeloFetch<any[]>('/projects?order_by=name&order=asc');
+      console.log('[Freelo Auth] Projects fetched:', projects?.length || 0);
+      
+      if (projects && Array.isArray(projects) && projects.length > 0) {
+        const firstProject = projects[0];
+        console.log('[Freelo Auth] First project:', {
+          id: firstProject.id,
+          name: firstProject.name,
+          hasOwner: !!firstProject.owner,
+          owner: firstProject.owner
+        });
+        
+        if (firstProject.owner && firstProject.owner.id) {
+          const userId = firstProject.owner.id;
+          console.log('[Freelo Auth] User ID obtained from project owner:', userId);
+          
+          if (user.value) {
+            // Aktualizovat user ID
+            user.value = {
+              ...user.value,
+              id: userId
+            };
+            console.log('[Freelo Auth] User ID updated in user.value');
+          }
+          return userId;
+        }
+      }
+      
+      // Pokud není žádný projekt, zkusit z úkolů
+      console.log('[Freelo Auth] No projects found, trying to get user ID from tasks...');
+      const freeloTasks = useFreeloTasks();
+      const allTasks = await freeloTasks.fetchAllTasks({});
+      
+      if (allTasks && allTasks.data && allTasks.data.tasks && allTasks.data.tasks.length > 0) {
+        const firstTask = allTasks.data.tasks[0];
+        if (firstTask.author && firstTask.author.id) {
+          const userId = firstTask.author.id;
+          console.log('[Freelo Auth] User ID obtained from task author:', userId);
+          
+          if (user.value) {
+            user.value = {
+              ...user.value,
+              id: userId
+            };
+          }
+          return userId;
+        }
+      }
+      
+      console.warn('[Freelo Auth] Could not find user ID in projects or tasks');
+    } catch (error: any) {
+      console.error('[Freelo Auth] Error fetching user ID from API:', error);
+      console.error('[Freelo Auth] Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
+    }
+    
+    return null;
+  };
+
   return {
     user: readonly(user),
     loading: readonly(loading),
@@ -178,6 +281,7 @@ export const useFreeloAuth = () => {
     signIn,
     signOut,
     checkAuth,
+    ensureUserId,
     isAuthenticated: computed(() => !!user.value),
   };
 };

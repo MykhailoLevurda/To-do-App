@@ -62,45 +62,88 @@ export const useFreeloTasks = () => {
    */
   const fetchTasksByProject = async (projectId: number, workerId?: number): Promise<FreeloTask[]> => {
     try {
-      let url = `/all-tasks?projects_ids[]=${projectId}`;
+      // Načíst úkoly se všemi stavy (active i finished)
+      // Freelo API používá state_id: 1 = active, 2 = finished
+      // Pokud nezadáme state_id, může ve výchozím nastavení filtrovat dokončené úkoly
+      // Proto načteme úkoly se všemi stavy zvlášť a spojíme je
       
-      // Pokud je zadán worker_id, filtrovat pouze úkoly přiřazené tomuto uživateli
+      // 1. Načíst aktivní úkoly (state_id = 1)
+      let urlActive = `/all-tasks?projects_ids[]=${projectId}&state_id=1`;
       if (workerId) {
-        url += `&worker_id=${workerId}`;
-        console.log('[Freelo Tasks] Filtering tasks by worker_id:', workerId);
-      } else {
-        console.log('[Freelo Tasks] Loading all tasks for project (no worker filter)');
+        urlActive += `&worker_id=${workerId}`;
       }
       
-      const response = await freeloFetch<FreeloPaginatedResponse<{ tasks: FreeloTask[] }>>(url);
+      console.log('[Freelo Tasks] Loading active tasks...');
+      const responseActive = await freeloFetch<FreeloPaginatedResponse<{ tasks: FreeloTask[] }>>(urlActive);
       
-      // Zkontrolovat strukturu odpovědi
-      console.log('[Freelo Tasks] API response:', {
-        total: response.total,
-        count: response.count,
-        hasData: !!response.data,
-        tasksCount: response.data?.tasks?.length || 0
+      // 2. Načíst dokončené úkoly (state_id = 2)
+      let urlFinished = `/all-tasks?projects_ids[]=${projectId}&state_id=2`;
+      if (workerId) {
+        urlFinished += `&worker_id=${workerId}`;
+      }
+      
+      console.log('[Freelo Tasks] Loading finished tasks...');
+      const responseFinished = await freeloFetch<FreeloPaginatedResponse<{ tasks: FreeloTask[] }>>(urlFinished);
+      
+      // Zpracovat aktivní úkoly
+      let activeTasks: FreeloTask[] = [];
+      if (Array.isArray(responseActive)) {
+        activeTasks = responseActive;
+      } else if (responseActive.data && responseActive.data.tasks) {
+        activeTasks = responseActive.data.tasks;
+      } else if ((responseActive as any).tasks) {
+        activeTasks = (responseActive as any).tasks;
+      }
+      
+      // Zpracovat dokončené úkoly
+      let finishedTasks: FreeloTask[] = [];
+      if (Array.isArray(responseFinished)) {
+        finishedTasks = responseFinished;
+      } else if (responseFinished.data && responseFinished.data.tasks) {
+        finishedTasks = responseFinished.data.tasks;
+      } else if ((responseFinished as any).tasks) {
+        finishedTasks = (responseFinished as any).tasks;
+      }
+      
+      // Spojit všechny úkoly a odstranit duplikáty podle ID
+      const allTasks = [...activeTasks, ...finishedTasks];
+      
+      // Odstranit duplikáty podle ID (pokud by se nějaký úkol objevil v obou seznamech)
+      const uniqueTasksMap = new Map<number, FreeloTask>();
+      allTasks.forEach(task => {
+        if (!uniqueTasksMap.has(task.id)) {
+          uniqueTasksMap.set(task.id, task);
+        } else {
+          console.warn('[Freelo Tasks] Duplicate task found:', task.id, task.name);
+        }
       });
       
-      let tasks: FreeloTask[] = [];
+      const tasks = Array.from(uniqueTasksMap.values());
       
-      // Možná je response přímo pole úkolů, ne paginated response
-      if (Array.isArray(response)) {
-        console.log('[Freelo Tasks] Response is array, returning directly');
-        tasks = response;
-      }
-      // Nebo je to paginated response s data.tasks
-      else if (response.data && response.data.tasks) {
-        tasks = response.data.tasks;
-      }
-      // Fallback - zkusit response.tasks
-      else if ((response as any).tasks) {
-        tasks = (response as any).tasks;
-      }
-      else {
-        console.warn('[Freelo Tasks] Unexpected response structure:', response);
-        return [];
-      }
+      console.log('[Freelo Tasks] Loaded tasks:', {
+        active: activeTasks.length,
+        finished: finishedTasks.length,
+        beforeDedup: allTasks.length,
+        afterDedup: tasks.length,
+        duplicatesRemoved: allTasks.length - tasks.length
+      });
+      
+      // Zkontrolovat strukturu odpovědi (pro debug)
+      console.log('[Freelo Tasks] API response summary:', {
+        activeResponse: {
+          total: responseActive.total,
+          count: responseActive.count,
+          hasData: !!responseActive.data,
+          tasksCount: activeTasks.length
+        },
+        finishedResponse: {
+          total: responseFinished.total,
+          count: responseFinished.count,
+          hasData: !!responseFinished.data,
+          tasksCount: finishedTasks.length
+        }
+      });
+      
       
       // Debug: zkontrolovat, jestli úkoly mají labely
       console.log('[Freelo Tasks] Checking labels in tasks...');
@@ -109,8 +152,16 @@ export const useFreeloTasks = () => {
         t.labels?.some(l => l.name?.toLowerCase() === 'in progress' || l.name?.toLowerCase() === 'in-progress')
       );
       
+      // Debug: zkontrolovat stavy úkolů
+      const tasksByState = {
+        active: tasks.filter(t => t.state?.state === 'active').length,
+        finished: tasks.filter(t => t.state?.state === 'finished').length,
+        unknown: tasks.filter(t => !t.state || !t.state.state).length
+      };
+      
       console.log('[Freelo Tasks] Tasks summary:', {
         total: tasks.length,
+        byState: tasksByState,
         withLabels: tasksWithLabels.length,
         withInProgressLabel: tasksWithInProgressLabel.length,
         sampleTask: tasks[0] ? {
@@ -194,6 +245,10 @@ export const useFreeloTasks = () => {
     // Získat jméno přiřazeného uživatele
     const assignee = freeloTask.worker?.fullname || freeloTask.worker?.email || undefined;
 
+    // Dokončené úkoly z Freelo jsou automaticky schválené
+    // (pokud je úkol dokončený ve Freelo, považujeme ho za schválený)
+    const approved = appStatus === 'done';
+
     return {
       id: `freelo-${freeloTask.id}`,
       title: freeloTask.name,
@@ -206,6 +261,7 @@ export const useFreeloTasks = () => {
       dueDate: freeloTask.due_date ? new Date(freeloTask.due_date) : undefined,
       createdAt: new Date(freeloTask.date_add),
       updatedAt: new Date(freeloTask.date_edited_at),
+      approved: approved, // Dokončené úkoly z Freelo jsou automaticky schválené
     };
   };
 
@@ -272,18 +328,31 @@ export const useFreeloTasks = () => {
           }
         });
         
-        // Nahradit úkoly bez labelů úkoly s detailem
+        // Nahradit úkoly bez labelů úkoly s detailem a odstranit duplikáty
         const allTasks = [
           ...tasksWithLabels,
           ...tasksWithDetails
         ];
         
+        // Odstranit duplikáty podle ID
+        const uniqueTasksMap = new Map<number, FreeloTask>();
+        allTasks.forEach(task => {
+          if (!uniqueTasksMap.has(task.id)) {
+            uniqueTasksMap.set(task.id, task);
+          } else {
+            console.warn('[Freelo Tasks] Duplicate task found after fetching details:', task.id, task.name);
+          }
+        });
+        
+        const uniqueTasks = Array.from(uniqueTasksMap.values());
+        
         // Znovu zkontrolovat labely
-        const finalTasksWithLabels = allTasks.filter(t => t.labels && t.labels.length > 0);
+        const finalTasksWithLabels = uniqueTasks.filter(t => t.labels && t.labels.length > 0);
         console.log('[Freelo Tasks] ✅ After fetching details:', finalTasksWithLabels.length, 'tasks have labels');
+        console.log('[Freelo Tasks] Removed', allTasks.length - uniqueTasks.length, 'duplicates');
         
         // Převod na formát aplikace
-        const tasks = allTasks.map(convertFreeloTaskToAppTask);
+        const tasks = uniqueTasks.map(convertFreeloTaskToAppTask);
         
         console.log(`[Freelo Tasks] ✅ Synced ${tasks.length} tasks for project ${cleanProjectId}${workerId ? ` (filtered by worker ${workerId})` : ''}`);
         
@@ -314,7 +383,7 @@ export const useFreeloTasks = () => {
     taskId: number | string,
     updates: {
       name?: string;
-      due_date?: string;
+      due_date?: string | null;
       due_date_end?: string;
       worker?: number;
       priority_enum?: 'l' | 'm' | 'h';
@@ -327,18 +396,38 @@ export const useFreeloTasks = () => {
         ? parseInt(taskId.replace('freelo-', ''))
         : taskId;
 
-      // Freelo API očekává tělo ve formátu { task: { ... } }
-      const requestBody = {
-        task: updates
-      };
+      // Odfiltrovat undefined hodnoty a vytvořit čistý objekt
+      const cleanUpdates: any = {};
+      Object.keys(updates).forEach(key => {
+        const value = (updates as any)[key];
+        if (value !== undefined && value !== null) {
+          cleanUpdates[key] = value;
+        }
+      });
+
+      // Pokud není žádná změna, nevolat API
+      if (Object.keys(cleanUpdates).length === 0) {
+        console.log('[Freelo Tasks] No updates to send, skipping API call');
+        return null;
+      }
+
+      // Podle Freelo API dokumentace: POST /task/{task_id}
+      // Body formát: přímo objekt s updates, BEZ wrapperu "task"
+      // Příklad z dokumentace:
+      // {
+      //   "name": "Edited task name",
+      //   "due_date": "2016-08-10T08:00:00+0200",
+      //   "due_date_end": "2016-09-10",
+      //   "worker": 1
+      // }
+      console.log('[Freelo Tasks] Updating task:', cleanTaskId, 'with updates:', cleanUpdates);
       
-      console.log('[Freelo Tasks] Updating task:', cleanTaskId, 'with updates:', updates);
-      
+      // Posílat updates přímo, bez wrapperu "task"
       const response = await freeloFetch<{ task: FreeloTask }>(
         `/task/${cleanTaskId}`,
         {
           method: 'POST',
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify(cleanUpdates),
           headers: {
             'Content-Type': 'application/json'
           }
@@ -410,9 +499,7 @@ export const useFreeloTasks = () => {
       const response = await freeloFetch(`/task/${cleanTaskId}/comments`, {
         method: 'POST',
         body: JSON.stringify({
-          comment: {
-            content: content
-          }
+          content: content
         }),
         headers: {
           'Content-Type': 'application/json'
@@ -599,9 +686,7 @@ export const useFreeloTasks = () => {
         `/project/${projectId}/tasklist/${tasklistId}/tasks`,
         {
           method: 'POST',
-          body: JSON.stringify({
-            task: taskData
-          }),
+          body: JSON.stringify(taskData),
           headers: {
             'Content-Type': 'application/json'
           }

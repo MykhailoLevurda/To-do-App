@@ -1,7 +1,7 @@
 <template>
   <UCard 
     class="task-card cursor-pointer hover:shadow-md transition-shadow"
-    :class="[priorityClass, task.approved ? 'opacity-60 grayscale' : '']"
+    :class="[priorityClass, (task.approved || (task.status === 'done' && task.id.startsWith('freelo-'))) ? 'opacity-60 grayscale' : '']"
     @click="openModal"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
@@ -141,7 +141,9 @@
         <div class="flex justify-between w-full items-center">
           <div class="text-xs flex items-center gap-1">
             <template v-if="task.status === 'done'">
-              <div v-if="task.approved" class="flex items-center gap-1 text-green-600">
+              <!-- Pro Freelo úkoly: pokud je úkol dokončený ve Freelo, je automaticky schválený -->
+              <!-- Pro normální úkoly: zobrazit stav schválení -->
+              <div v-if="task.approved || task.id.startsWith('freelo-')" class="flex items-center gap-1 text-green-600">
                 <CheckCircleIcon class="w-4 h-4" /> Schváleno
               </div>
               <div v-else class="flex items-center gap-1 text-yellow-600">
@@ -150,6 +152,14 @@
             </template>
           </div>
           <div class="flex gap-2">
+            <UButton
+              v-if="task.status === 'done' && !task.approved && !task.id.startsWith('freelo-')"
+              icon="i-heroicons-check-circle"
+              color="green"
+              @click="approveTask"
+            >
+              Schválit
+            </UButton>
             <UButton
               :icon="task.status === 'done' ? 'i-heroicons-arrow-path' : 'i-heroicons-check-circle'"
               :color="task.status === 'done' ? 'blue' : 'green'"
@@ -181,9 +191,11 @@
 <script setup lang="ts">
 import type { TaskItem } from '~/stores/todos'
 import { UserIcon, ChartBarIcon } from '@heroicons/vue/24/solid'
+import { CheckCircleIcon, ClockIcon } from '@heroicons/vue/24/outline'
 
 const freeloTasks = useFreeloTasks();
 const auth = useFreeloAuth();
+const scrumBoard = useScrumBoardStore();
 
 // Komentáře z Freelo API
 const taskComments = ref<Record<string, any[]>>({});
@@ -276,9 +288,31 @@ async function submitComment() {
 }
 
 async function approveTask() {
-  // Pro Freelo - schválení úkolu není podporováno přes API
-  alert('Schválení úkolů je dostupné pouze v Freelo aplikaci.');
-  showModal.value = false;
+  if (!auth.isAuthenticated) {
+    alert('Pro schválení úkolu se musíte přihlásit.');
+    return;
+  }
+  
+  try {
+    // Pro Freelo úkoly: pokud je úkol dokončený ve Freelo, je automaticky schválený
+    // Schvalování se provádí lokálně v aplikaci (pro zobrazení)
+    if (props.task.id.startsWith('freelo-')) {
+      // Pro Freelo úkoly: schválení je pouze lokální (úkol je už dokončený ve Freelo)
+      scrumBoard.updateTask(props.task.id, { approved: true });
+      console.log('[TaskCard] Task approved (Freelo task, local approval)');
+    } else {
+      // Pro normální úkoly: schválit přes Firebase
+      const firestoreTasks = useFirestoreTasks();
+      await firestoreTasks.approveTask(props.task.id);
+      scrumBoard.updateTask(props.task.id, { approved: true });
+      console.log('[TaskCard] Task approved (Firebase)');
+    }
+    
+    showModal.value = false;
+  } catch (error: any) {
+    console.error('[TaskCard] Error approving task:', error);
+    alert('Chyba při schvalování úkolu: ' + (error.message || 'Neznámá chyba'));
+  }
 }
 
 async function toggleTaskStatus() {

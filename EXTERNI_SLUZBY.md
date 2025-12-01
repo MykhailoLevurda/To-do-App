@@ -1,23 +1,29 @@
-# Externí služby
+# Externí služby a princip fungování aplikace
 
-Tento dokument popisuje všechny externí služby používané v projektu a jak je nastavit a používat.
+Tento dokument popisuje všechny externí služby používané v projektu, jak je nastavit a používat, a také princip fungování aplikace.
 
-## Freelo API
+---
 
-Freelo API je hlavní externí služba pro načítání projektů a úkolů z Freelo aplikace.
+## Externí služby
 
-### Co se používá
+### 1. Freelo API
 
-- **Freelo API** - načítání projektů a úkolů z Freelo účtu
-- **HTTP Basic Authentication** - autentizace pomocí emailu a API klíče
+Freelo API je **hlavní externí služba** pro správu projektů a úkolů. Aplikace používá Freelo API pro:
+- Načítání projektů a úkolů z Freelo účtu
+- Vytváření nových projektů a úkolů
+- Aktualizaci stavů úkolů (todo, in-progress, done)
+- Přidávání komentářů k úkolům
+- Správu labelů úkolů
 
-### Konfigurace
+#### Autentizace
 
-Freelo API podporuje dva způsoby autentizace:
+Freelo API používá **HTTP Basic Authentication** pomocí emailu a API klíče.
+
+**Způsoby přihlášení:**
 
 1. **Interaktivní přihlášení** (doporučeno pro produkci)
    - Uživatel zadá email a API klíč při přihlášení
-   - Credentials se ukládají do localStorage pro trvalé přihlášení
+   - Credentials se ukládají do Firestore pro trvalé přihlášení
    - Po zavření a znovu otevření aplikace je uživatel automaticky přihlášen
 
 2. **Automatické přihlášení z .env** (pro vývoj, volitelné)
@@ -30,12 +36,7 @@ NUXT_PUBLIC_FREELO_EMAIL=vas@email.com
 NUXT_PUBLIC_FREELO_API_KEY=vash-api-klic
 ```
 
-⚠️ **DŮLEŽITÉ:** 
-- Nikdy necommitněte `.env` soubor s API klíčem do Git repozitáře
-- `.env` soubor je v `.gitignore` a neměl by být commitnut
-- Pro produkci používejte interaktivní přihlášení (bez .env)
-
-### Jak získat Freelo API klíč
+#### Jak získat Freelo API klíč
 
 1. Přejděte na [Freelo aplikaci](https://app.freelo.io/)
 2. Přihlaste se do svého účtu
@@ -43,61 +44,43 @@ NUXT_PUBLIC_FREELO_API_KEY=vash-api-klic
 4. Najděte sekci **API klíč**
 5. Zkopírujte svůj API klíč
 
-### Jak se přihlásit
-
-1. V aplikaci klikněte na tlačítko **Přihlásit se**
-2. Zadejte svůj **Freelo email** (stejný, jaký používáte pro přihlášení do Freelo)
-3. Zadejte svůj **API klíč** (získaný z nastavení Freelo)
-4. Klikněte na **Přihlásit se**
-
-### Co se načítá z Freelo
-
-- **Projekty** - všechny aktivní projekty z vašeho Freelo účtu
-- **Úkoly** - všechny úkoly z projektů
-- **Uživatelé** - informace o členech týmu
-
-### Omezení
-
-V současné verzi aplikace:
-- Projekty a úkoly se **pouze načítají** z Freelo (read-only)
-- Vytváření, úprava a mazání projektů/úkolů je dostupné pouze v Freelo aplikaci
-- Pro plnou správu projektů a úkolů použijte Freelo aplikaci
-
-### API Endpointy
+#### API Endpointy
 
 Aplikace používá tyto Freelo API endpointy:
-- Base URL: `https://api2.freelo.io/v1/` (pro vývoj, `api2` místo `api` kvůli CORS)
+- **Base URL:** `https://api2.freelo.io/v1/`
 - `GET /projects` - načtení vlastních aktivních projektů
+- `POST /projects` - vytvoření nového projektu
 - `GET /all-projects` - načtení všech projektů (s paginací)
 - `GET /all-tasks` - načtení všech úkolů s filtrováním
-- `GET /project/{project_id}/tasklist/{tasklist_id}/tasks` - načtení úkolů z konkrétního tasklistu
+- `POST /project/{project_id}/tasklist/{tasklist_id}/tasks` - vytvoření nového úkolu
+- `POST /task/{task_id}/finish` - dokončení úkolu
+- `POST /task/{task_id}/activate` - aktivace úkolu
+- `POST /task/{task_id}/labels` - přidání labelu k úkolu
+- `DELETE /task/{task_id}/labels/{label_uuid}` - odstranění labelu z úkolu
+- `POST /task/{task_id}/comments` - přidání komentáře k úkolu
 
 **Poznámka:** 
-- Aplikace používá `api2.freelo.io` místo `api.freelo.io`, protože `api.freelo.io` je pouze pro produkci
+- Aplikace používá `api2.freelo.io` místo `api.freelo.io` kvůli CORS
 - Aplikace používá **server-side proxy** (`/api/freelo/[...path]`) pro volání Freelo API, což řeší CORS problém
 - Všechny požadavky na Freelo API procházejí přes Nuxt server, kde není CORS omezení
 
-### Rate Limiting
+#### Rate Limiting
 
 Freelo API má limit **25 požadavků za minutu**. Pokud limit překročíte, obdržíte chybu 429 a musíte počkat 60 sekund.
 
-### Dokumentace
+#### Dokumentace
 
 Kompletní dokumentace Freelo API je k dispozici v souboru `freelo-apib.md` v projektu.
 
 ---
 
-## Firebase
+### 2. Firebase
 
-Firebase je hlavní externí služba používaná v projektu pro autentizaci uživatelů a ukládání dat.
+Firebase se používá pro:
+- **Ukládání Freelo credentials** (email + API klíč) do Firestore
+- **Ukládání lokálních úkolů** (úkoly vytvořené přímo v aplikaci, ne z Freelo)
 
-### Co se používá
-
-- **Firebase Authentication** - přihlášení uživatelů (email/heslo, Google OAuth)
-- **Cloud Firestore** - NoSQL databáze pro ukládání projektů, úkolů, uživatelů
-- **Firebase Storage** - ukládání souborů (konfigurováno, ale zatím nevyužíváno)
-
-### Konfigurace
+#### Konfigurace
 
 Firebase se konfiguruje pomocí environment proměnných v souboru `.env`:
 
@@ -110,231 +93,233 @@ NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
 NUXT_PUBLIC_FIREBASE_APP_ID=your-app-id
 ```
 
-### Jak získat Firebase konfiguraci
+#### Struktura dat v Firestore
 
-1. Přejděte na [Firebase Console](https://console.firebase.google.com/)
-2. Vyberte nebo vytvořte projekt
-3. Přejděte na **Project Settings** (⚙️ ikona vedle Project Overview)
-4. V sekci **Your apps** klikněte na ikonu webu (`</>`) nebo přidejte novou webovou aplikaci
-5. Zkopírujte hodnoty z Firebase SDK konfigurace:
-   - `apiKey` → `NUXT_PUBLIC_FIREBASE_API_KEY`
-   - `authDomain` → `NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-   - `projectId` → `NUXT_PUBLIC_FIREBASE_PROJECT_ID`
-   - `storageBucket` → `NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
-   - `messagingSenderId` → `NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-   - `appId` → `NUXT_PUBLIC_FIREBASE_APP_ID`
+**Kolekce: `users`**
+- Ukládá Freelo credentials (email + API klíč) pro trvalé přihlášení
+- Struktura: `{ email: string, apiKey: string }`
 
-### Nastavení Authentication
-
-1. V Firebase Console přejděte na **Authentication** → **Sign-in method**
-2. Povolte **Email/Password** provider
-3. Pro Google OAuth povolte **Google** provider a nastavte OAuth consent screen
-
-### Nastavení Firestore
-
-1. V Firebase Console přejděte na **Firestore Database**
-2. Vytvořte databázi (pokud ještě neexistuje)
-3. Vyberte režim: **Production mode** nebo **Test mode** (pro vývoj)
-4. Vyberte lokaci (např. `eur3` pro Evropu)
-
-### Nasazení Firestore pravidel
-
-Pravidla pro Firestore jsou definována v souboru `firestore.rules`. Pro nasazení pravidel použijte:
-
-```bash
-firebase deploy --only firestore:rules
-```
-
-### Nasazení Firestore indexů
-
-Indexy jsou definovány v souboru `firestore.indexes.json`. Pro nasazení indexů použijte:
-
-```bash
-firebase deploy --only firestore:indexes
-```
-
-Nebo použijte npm script:
-
-```bash
-npm run firebase:indexes
-```
-
-### Struktura dat v Firestore
-
-#### Kolekce: `users`
-- `uid` - ID uživatele (stejné jako Firebase Auth UID)
-- `email` - email uživatele
-- `displayName` - zobrazované jméno
-- `photoURL` - URL profilového obrázku
-- `color` - barva uživatele pro UI
-- `createdAt` - timestamp vytvoření
-- `lastSeen` - timestamp poslední aktivity
-
-#### Kolekce: `projects`
-- `name` - název projektu
-- `description` - popis projektu
-- `color` - barva projektu
-- `createdBy` - UID uživatele, který projekt vytvořil
-- `status` - stav projektu (`active`, `archived`)
-- `taskCount` - počet úkolů v projektu
-- `teamMembers` - pole členů týmu
-  - `userId` - UID člena
-  - `email` - email člena
-  - `displayName` - jméno člena
-  - `addedAt` - timestamp přidání
-  - `addedBy` - UID uživatele, který člena přidal
-- `createdAt` - timestamp vytvoření
-- `updatedAt` - timestamp poslední aktualizace
-
-#### Kolekce: `tasks`
-- `title` - název úkolu
-- `description` - popis úkolu
-- `status` - stav úkolu (`todo`, `in-progress`, `done`)
-- `projectId` - ID projektu
-- `createdBy` - UID uživatele, který úkol vytvořil
-- `assignedTo` - UID přiřazeného uživatele (volitelné)
-- `priority` - priorita (`low`, `medium`, `high`)
-- `dueDate` - datum dokončení (volitelné)
-- `createdAt` - timestamp vytvoření
-- `updatedAt` - timestamp poslední aktualizace
-
-### Bezpečnostní pravidla
-
-Pravidla jsou definována v `firestore.rules`:
-
-- **Tasks**: Uživatelé mohou číst všechny úkoly, vytvářet nové, upravovat/mazat pouze své vlastní
-- **Users**: Uživatelé mohou číst všechny uživatele, upravovat pouze svůj vlastní profil
-- **Boards**: Uživatelé mohou číst všechny boardy, vytvářet nové, upravovat/mazat pouze ty, kde jsou členy
-- **Projects**: Uživatelé mohou číst všechny projekty, vytvářet nové, upravovat/mazat pouze své vlastní
+**Kolekce: `tasks`**
+- Ukládá lokální úkoly (úkoly vytvořené přímo v aplikaci)
+- Freelo úkoly se **neukládají** do Firestore, pouze se načítají z Freelo API
 
 ---
 
-## Email služby (připraveno, ale zatím neimplementováno)
-
-Pro odesílání emailů (např. pozvánky do týmu) je připravena integrace s různými email službami. V současné době je implementace v demo režimu.
-
-### Podporované služby
-
-Projekt je připraven pro integraci s těmito službami:
-
-- **SendGrid** - https://sendgrid.com/
-- **Mailgun** - https://www.mailgun.com/
-- **AWS SES** - https://aws.amazon.com/ses/
-- **Resend** - https://resend.com/
-
-### Implementace
-
-Email služba se implementuje v souboru `server/api/invite.post.ts`. Aktuálně je kód v demo režimu a pouze loguje email místo odeslání.
-
-### Jak implementovat email službu
-
-1. Zaregistrujte se u vybrané email služby
-2. Získejte API klíč
-3. Přidejte API klíč do `.env`:
-   ```env
-   EMAIL_API_KEY=your-api-key
-   EMAIL_FROM=noreply@yourdomain.com
-   ```
-4. Nainstalujte příslušný npm balíček:
-   ```bash
-   # Pro SendGrid
-   npm install @sendgrid/mail
-   
-   # Pro Mailgun
-   npm install mailgun.js
-   
-   # Pro AWS SES
-   npm install @aws-sdk/client-ses
-   
-   # Pro Resend
-   npm install resend
-   ```
-5. Odkomentujte a upravte kód v `server/api/invite.post.ts` (řádky 79-95)
-
-### Příklad implementace s Resend
-
-```typescript
-import { Resend } from 'resend';
-
-const resend = new Resend(process.env.EMAIL_API_KEY);
-
-try {
-  await resend.emails.send({
-    from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
-    to: email,
-    subject: emailSubject,
-    html: emailBody.replace(/\n/g, '<br>')
-  });
-  console.log('[Invite API] Email sent successfully to:', email);
-} catch (emailError: any) {
-  console.error('[Invite API] Email sending failed:', emailError);
-  setResponseStatus(event, 500);
-  return {
-    success: false,
-    error: 'Chyba při odesílání emailu: ' + emailError.message
-  };
-}
-```
-
----
-
-## WebSocket server
+### 3. WebSocket server (volitelné)
 
 Projekt obsahuje vlastní WebSocket server pro real-time komunikaci. Server běží na portu 3002 (vývoj) nebo podle konfigurace.
 
-### Konfigurace
-
-WebSocket server se konfiguruje pomocí environment proměnných:
+#### Konfigurace
 
 ```env
 NUXT_PUBLIC_WS_URL=ws://localhost:3002
 NUXT_PUBLIC_WS_ENABLED=true
 ```
 
-### Spuštění
+#### Spuštění
 
 Pro vývoj můžete spustit WebSocket server samostatně:
-
 ```bash
 npm run dev:ws
 ```
 
 Nebo spustit vše najednou (Nuxt + WebSocket):
-
 ```bash
 npm run dev:all
 ```
 
-### Použití
-
-WebSocket server je implementován v `server/websocket.ts` a klient v `plugins/ws.client.ts`. V současné době je připraven pro real-time aktualizace, ale může být rozšířen podle potřeby.
+**Poznámka:** WebSocket server je volitelný a v současné době není aktivně používán pro synchronizaci s Freelo.
 
 ---
 
-## Další konfigurace
+## Princip fungování aplikace
 
-### Aplikace URL
+### Architektura
 
-Pro generování odkazů (např. pozvánky) se používá:
+Aplikace je postavena na **Nuxt 3** frameworku s následující architekturou:
 
-```env
-NUXT_PUBLIC_APP_URL=https://yourdomain.com
-NUXT_PUBLIC_SITE_URL=https://yourdomain.com
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Frontend (Vue 3)                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │  Dashboard   │  │ Scrum Board  │  │  Task Card   │ │
+│  └──────────────┘  └──────────────┘  └──────────────┘ │
+│                                                         │
+│  ┌──────────────────────────────────────────────────┐ │
+│  │         Pinia Stores (State Management)          │ │
+│  │  - useProjectsStore  - useScrumBoardStore        │ │
+│  └──────────────────────────────────────────────────┘ │
+│                                                         │
+│  ┌──────────────────────────────────────────────────┐ │
+│  │         Composables (Business Logic)             │ │
+│  │  - useFreeloProjects  - useFreeloTasks          │ │
+│  │  - useFreeloAuth      - useFreeloApi            │ │
+│  └──────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│              Nuxt Server (API Proxy)                   │
+│  ┌──────────────────────────────────────────────────┐ │
+│  │  /api/freelo/[...path]  (CORS Proxy)            │ │
+│  └──────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│                  Freelo API                             │
+│         https://api2.freelo.io/v1/                      │
+└─────────────────────────────────────────────────────────┘
 ```
 
-Pokud není nastaveno, použije se výchozí hodnota `http://localhost:3001`.
+### Tok dat
 
-### API Base URL
+#### 1. Načítání projektů
 
-```env
-NUXT_PUBLIC_API_BASE=/api
+```
+Uživatel otevře Dashboard
+    ↓
+useFreeloProjects.syncProjects()
+    ↓
+fetchProjects() → Freelo API GET /projects
+    ↓
+Server proxy /api/freelo/projects
+    ↓
+Freelo API vrací projekty
+    ↓
+Projekty se uloží do useProjectsStore
+    ↓
+Dashboard zobrazí projekty
 ```
 
-### Název aplikace
+#### 2. Načítání úkolů
 
-```env
-NUXT_PUBLIC_APP_NAME=Scrum Board
 ```
+Uživatel otevře Scrum Board pro projekt
+    ↓
+ScrumBoard.onMounted()
+    ↓
+loadTasksFromFreelo()
+    ↓
+useFreeloTasks.syncTasksForProject()
+    ↓
+fetchTasksByProject() → Freelo API GET /all-tasks
+    ↓
+Server proxy /api/freelo/all-tasks
+    ↓
+Freelo API vrací úkoly
+    ↓
+Úkoly se převedou na formát aplikace (convertFreeloTaskToAppTask)
+    ↓
+Úkoly se uloží do useScrumBoardStore
+    ↓
+Scrum Board zobrazí úkoly v kanban sloupcích
+```
+
+#### 3. Změna stavu úkolu (Drag & Drop)
+
+```
+Uživatel přetáhne úkol do jiného sloupce
+    ↓
+handleDrop() → updateTaskStatus()
+    ↓
+Okamžitá UI aktualizace (scrumBoard.updateTaskStatus)
+    ↓
+syncTaskStatusWithFreelo()
+    ↓
+Podle cílového stavu:
+  - 'done' → freeloTasks.finishTask() → POST /task/{id}/finish
+  - 'in-progress' → freeloTasks.addInProgressLabel() → POST /task/{id}/labels
+  - 'todo' → freeloTasks.removeInProgressLabel() → DELETE /task/{id}/labels/{uuid}
+    ↓
+Server proxy předá požadavek do Freelo API
+    ↓
+Freelo API aktualizuje úkol
+    ↓
+Změna se projeví ve Freelo aplikaci
+```
+
+#### 4. Vytváření projektu
+
+```
+Uživatel klikne "Nový Projekt" a vyplní formulář
+    ↓
+saveProject() → freeloProjects.createProject()
+    ↓
+Získání user ID (z auth nebo z API)
+    ↓
+POST /projects → Freelo API
+    ↓
+Server proxy /api/freelo/projects
+    ↓
+Freelo API vytvoří projekt
+    ↓
+syncProjects() → načtení aktualizovaného seznamu projektů
+    ↓
+Projekt se zobrazí v Dashboardu
+```
+
+#### 5. Vytváření úkolu
+
+```
+Uživatel klikne "Add Task" a vyplní formulář
+    ↓
+addTask() → freeloTasks.createTask()
+    ↓
+Získání tasklist ID z projektu
+    ↓
+POST /project/{id}/tasklist/{tasklist_id}/tasks → Freelo API
+    ↓
+Server proxy předá požadavek
+    ↓
+Freelo API vytvoří úkol
+    ↓
+refreshTasks() → načtení aktualizovaných úkolů
+    ↓
+Úkol se zobrazí v Scrum Boardu
+```
+
+### Synchronizace dat
+
+Aplikace používá **jednosměrnou synchronizaci** z Freelo API:
+
+1. **Načítání dat:** Data se načítají z Freelo API při otevření projektu
+2. **Aktualizace dat:** Změny se odesílají do Freelo API okamžitě (drag & drop, vytváření úkolů)
+3. **Ruční obnovení:** Uživatel může kliknout na tlačítko "Obnovit" pro načtení nejnovějších dat z Freelo
+
+**Poznámka:** Aplikace **nepoužívá automatické polling** (načítání každých X sekund). Data se načítají pouze:
+- Při otevření projektu
+- Po kliknutí na tlačítko "Obnovit"
+- Po vytvoření/aktualizaci úkolu
+
+### Mapování stavů
+
+Aplikace mapuje stavy úkolů mezi Scrum Boardem a Freelo:
+
+| Scrum Board | Freelo |
+|-------------|--------|
+| `todo` | Úkol je aktivní (`state_id=1`) a nemá label "In progress" |
+| `in-progress` | Úkol je aktivní (`state_id=1`) a má label "In progress" |
+| `done` | Úkol je dokončený (`state_id=2`) |
+
+**Logika mapování:**
+- **todo → in-progress:** Přidá se label "In progress" k úkolu
+- **in-progress → done:** Úkol se dokončí (`POST /task/{id}/finish`)
+- **done → in-progress:** Úkol se aktivuje (`POST /task/{id}/activate`) a přidá se label "In progress"
+- **in-progress → todo:** Odstraní se label "In progress" z úkolu
+
+### Schvalování úkolů
+
+- **Dokončené úkoly z Freelo** jsou automaticky považovány za schválené
+- **Lokální úkoly** (vytvořené v aplikaci) mohou být schváleny přes tlačítko "Schválit" v modalu
+- Schválené úkoly se zobrazují se šedým efektem (`opacity-60 grayscale`)
+
+### Duplikáty úkolů
+
+Aplikace implementuje ochranu proti duplikátům úkolů:
+- Duplikáty se odstraňují při načítání z Freelo API
+- Používá se `Map<id, task>` pro zajištění unikátnosti
+- Duplikáty se logují do konzole pro debugging
 
 ---
 
@@ -343,8 +328,8 @@ NUXT_PUBLIC_APP_NAME=Scrum Board
 ⚠️ **DŮLEŽITÉ:**
 
 1. **Nikdy necommitněte `.env` soubor** - je v `.gitignore`
-2. **Firebase API klíče jsou veřejné** - to je v pořádku, ale mějte správně nastavená Firestore pravidla
-3. **Email API klíče jsou soukromé** - nikdy je nezveřejňujte
+2. **Freelo API klíče jsou citlivé** - ukládají se do Firestore s bezpečnostními pravidly
+3. **Firebase API klíče jsou veřejné** - to je v pořádku, ale mějte správně nastavená Firestore pravidla
 4. **Používejte environment proměnné** pro všechny citlivé údaje
 5. **V produkci použijte HTTPS** pro všechny externí komunikace
 
@@ -352,23 +337,39 @@ NUXT_PUBLIC_APP_NAME=Scrum Board
 
 ## Troubleshooting
 
-### Firebase nefunguje
+### Freelo API nefunguje
 
-1. Zkontrolujte, zda jsou všechny Firebase proměnné nastaveny v `.env`
-2. Ověřte, že Firebase projekt existuje a je aktivní
-3. Zkontrolujte Firestore pravidla - možná blokují operace
-4. Ověřte, že Authentication je správně nastaveno v Firebase Console
+1. Zkontrolujte, zda jsou Freelo credentials správně nastaveny
+2. Ověřte, že API klíč je platný (zkuste se přihlásit do Freelo aplikace)
+3. Zkontrolujte konzoli pro chyby (CORS, 401, 429)
+4. Ověřte, že server proxy funguje (`/api/freelo/[...path]`)
 
-### Chyba s oprávněními v Firestore
+### Úkoly se nezobrazují
 
-1. Zkontrolujte `firestore.rules` - možná chybí pravidlo pro danou kolekci
-2. Ověřte, že uživatel je přihlášen (`request.auth != null`)
-3. Zkontrolujte, zda uživatel má správná oprávnění podle pravidel
-4. Nasajte pravidla: `firebase deploy --only firestore:rules`
+1. Zkontrolujte, zda je projekt správně načten z Freelo
+2. Ověřte, zda má projekt úkoly ve Freelo aplikaci
+3. Zkontrolujte konzoli pro chyby při načítání úkolů
+4. Zkuste kliknout na tlačítko "Obnovit" pro ruční načtení
 
-### Email se neodesílá
+### Změna stavu úkolu nefunguje
 
-1. V současné době je email v demo režimu - implementujte skutečnou email službu
-2. Zkontrolujte, zda je API klíč správně nastaven
-3. Ověřte, zda má email služba správně nastavený odesílatel (from address)
+1. Zkontrolujte, zda je úkol z Freelo (ID začíná `freelo-`)
+2. Ověřte, zda má úkol správný stav ve Freelo
+3. Zkontrolujte konzoli pro chyby při synchronizaci
+4. Zkuste znovu načíst úkoly (tlačítko "Obnovit")
 
+### Vytváření projektu selže
+
+1. Zkontrolujte, zda je uživatel přihlášen
+2. Ověřte, zda má uživatel user ID (zkuste se odhlásit a přihlásit znovu)
+3. Zkontrolujte konzoli pro chyby (User ID not found, API error)
+4. Zkuste vytvořit projekt přímo ve Freelo aplikaci
+
+---
+
+## Další zdroje
+
+- [Freelo API dokumentace](./freelo-apib.md) - Kompletní dokumentace Freelo API
+- [Nuxt 3 dokumentace](https://nuxt.com/) - Dokumentace Nuxt frameworku
+- [Vue 3 dokumentace](https://vuejs.org/) - Dokumentace Vue frameworku
+- [Pinia dokumentace](https://pinia.vuejs.org/) - Dokumentace Pinia state managementu

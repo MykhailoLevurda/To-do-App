@@ -180,9 +180,64 @@ export const useFreeloApi = () => {
       });
     }
     
+    // Pro POST/PUT/PATCH requesty použít $fetch (lépe funguje s Nuxt serverem)
+    // Pro GET requesty použít fetch (zachovat kompatibilitu)
+    if (options.method === 'POST' || options.method === 'PUT' || options.method === 'PATCH') {
+      try {
+        console.log('[Freelo API] Using $fetch for', options.method, 'request...');
+        
+        // Parse body if it's a string
+        let bodyData: any = options.body;
+        if (typeof options.body === 'string') {
+          try {
+            bodyData = JSON.parse(options.body);
+          } catch {
+            // If parsing fails, use as is
+            bodyData = options.body;
+          }
+        }
+        
+        const response = await $fetch<T>(proxyUrl, {
+          method: options.method as any,
+          headers: {
+            'Authorization': getAuthHeader(credentials),
+            'X-Freelo-Email': credentials.email,
+            'X-Freelo-Api-Key': credentials.apiKey,
+            'Content-Type': 'application/json',
+            ...options.headers as any,
+          },
+          body: bodyData,
+        });
+        
+        console.log('[Freelo API] ✅ $fetch completed successfully');
+        return response;
+      } catch (fetchError: any) {
+        console.error('[Freelo API] ❌ $fetch error:', fetchError);
+        console.error('[Freelo API] Error details:', {
+          message: fetchError.message,
+          name: fetchError.name,
+          status: fetchError.status,
+          statusCode: fetchError.statusCode,
+          data: fetchError.data
+        });
+        
+        if (fetchError.status === 401 || fetchError.statusCode === 401) {
+          await clearCredentials();
+          throw new Error('Neplatné přihlašovací údaje. Zkontrolujte email a API klíč.');
+        }
+        if (fetchError.status === 429 || fetchError.statusCode === 429) {
+          throw new Error('Překročen limit požadavků. Počkejte 60 sekund.');
+        }
+        
+        const errorMessage = fetchError.data?.error || fetchError.data?.message || fetchError.message || 'Unknown error';
+        throw new Error(errorMessage);
+      }
+    }
+    
+    // Pro GET requesty použít fetch (zachovat kompatibilitu)
     let response: Response;
     try {
-      console.log('[Freelo API] About to call fetch...');
+      console.log('[Freelo API] Using fetch for GET request...');
       response = await fetch(proxyUrl, {
         ...options,
         method: options.method || 'GET',
@@ -193,29 +248,11 @@ export const useFreeloApi = () => {
           'Content-Type': 'application/json',
           ...options.headers,
         },
-        body: options.body,
       });
       console.log('[Freelo API] ✅ Fetch completed, status:', response.status);
     } catch (fetchError: any) {
       console.error('[Freelo API] ❌ Fetch error (network/CORS):', fetchError);
-      console.error('[Freelo API] Error details:', {
-        message: fetchError.message,
-        name: fetchError.name,
-        cause: fetchError.cause,
-        stack: fetchError.stack
-      });
       throw new Error(`Síťová chyba při volání API: ${fetchError.message || 'Nelze se připojit k serveru'}`);
-    }
-    
-    // Debug: logovat response status
-    if (options.method === 'POST' || options.method === 'PUT' || options.method === 'PATCH') {
-      console.log('[Freelo API] Response received:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        url: response.url,
-        headers: Object.fromEntries(response.headers.entries())
-      });
     }
 
     if (!response.ok) {
@@ -225,44 +262,18 @@ export const useFreeloApi = () => {
       try {
         const text = await response.text();
         if (text) {
-          // Zkontrolovat, jestli je to JSON
           if (contentType.includes('application/json') || text.trim().startsWith('{') || text.trim().startsWith('[')) {
             try {
               errorData = JSON.parse(text);
             } catch (parseError) {
-              console.warn('[Freelo API] Could not parse JSON error response:', parseError);
-              // Pokud to není JSON, použít text jako zprávu
               errorData = { error: text.substring(0, 200) };
             }
           } else {
-            // Pokud to není JSON (např. HTML error page), použít status text
-            console.warn('[Freelo API] Non-JSON error response received:', contentType);
             errorData = { error: `Server error: ${response.status} ${response.statusText}` };
           }
         }
       } catch (e) {
-        console.warn('[Freelo API] Could not read error response:', e);
         errorData = { error: `Request failed: ${response.status} ${response.statusText}` };
-      }
-      
-      // Pokud je to volané z background sync, logovat jen jako warning
-      const isBackgroundSync = new Error().stack?.includes('syncWithFreeloInBackground') || false;
-      
-      if (isBackgroundSync && response.status >= 500) {
-        // Pro background sync a server errors (500+), logovat jen jako info
-        console.log('[Freelo API] ⚠️ Request failed (background sync, non-critical):', {
-          status: response.status,
-          endpoint,
-          error: errorData.error || errorData.message || 'Unknown error'
-        });
-      } else {
-        console.error('[Freelo API] Request failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          endpoint,
-          contentType,
-          error: errorData
-        });
       }
       
       if (response.status === 401) {
@@ -273,7 +284,6 @@ export const useFreeloApi = () => {
         throw new Error('Překročen limit požadavků. Počkejte 60 sekund.');
       }
       
-      // Vytvořit lepší chybovou zprávu
       const errorMessage = errorData.error || errorData.message || `Freelo API error: ${response.status} ${response.statusText}`;
       throw new Error(errorMessage);
     }

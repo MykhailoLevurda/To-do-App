@@ -384,11 +384,27 @@ async function saveProject() {
   }
   
   try {
-    // Poznámka: Freelo API neumožňuje vytváření projektů přes API
-    // Projekty se musí vytvářet přímo v Freelo aplikaci
-    // Uživatel může přidat existující projekt podle ID
-    alert('Vytváření projektů je dostupné pouze v Freelo aplikaci. Můžete přidat existující projekt podle ID pomocí tlačítka "Přidat z Freelo".');
+    if (editingProject.value) {
+      // Úprava existujícího projektu - zatím nepodporováno přes Freelo API
+      alert('Úprava projektů je dostupná pouze v Freelo aplikaci.');
+      closeProjectModal();
+      return;
+    }
+    
+    // Vytvoření nového projektu přes Freelo API
+    console.log('[Dashboard] Creating project in Freelo:', projectForm.value.name);
+    const createdProject = await freeloProjects.createProject(
+      projectForm.value.name,
+      'CZK' // Defaultní měna
+    );
+    
+    console.log('[Dashboard] Project created successfully:', createdProject);
+    
+    // Projekty se automaticky načtou po vytvoření (v createProject se volá syncProjects)
     closeProjectModal();
+    
+    // Zobrazit úspěšnou zprávu
+    alert(`Projekt "${projectForm.value.name}" byl úspěšně vytvořen ve Freelo!`);
   } catch (error: any) {
     console.error('[Dashboard] Error saving project:', error);
     alert(error.message || 'Chyba při ukládání projektu. Zkuste to prosím znovu.');

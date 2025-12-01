@@ -289,6 +289,147 @@ export const useFreeloProjects = () => {
     return colors[id % colors.length];
   };
 
+  /**
+   * Vytvoří nový projekt ve Freelo
+   * @param name - Název projektu
+   * @param currencyIso - Měna projektu (CZK, EUR, USD), defaultně CZK
+   */
+  const createProject = async (
+    name: string,
+    currencyIso: string = 'CZK'
+  ): Promise<FreeloProject> => {
+    try {
+      const auth = useFreeloAuth();
+      
+      // Získat user ID - pokud není v user.value, zkusit ho získat z API
+      let userId = auth.user.value?.id;
+      
+      console.log('[Freelo Projects] Current user:', {
+        email: auth.user.value?.email,
+        hasId: !!auth.user.value?.id,
+        id: auth.user.value?.id
+      });
+      
+      if (!userId) {
+        console.log('[Freelo Projects] User ID not found in auth, calling ensureUserId()...');
+        try {
+          userId = await auth.ensureUserId();
+          console.log('[Freelo Projects] ensureUserId() returned:', userId);
+        } catch (error: any) {
+          console.error('[Freelo Projects] Error in ensureUserId():', error);
+        }
+      }
+      
+      if (!userId) {
+        // Poslední pokus - zkusit získat z aktuálně načtených projektů
+        console.log('[Freelo Projects] User ID still not found, trying to get from existing projects...');
+        try {
+          const existingProjects = await fetchProjects();
+          if (existingProjects && existingProjects.length > 0 && existingProjects[0].owner) {
+            userId = existingProjects[0].owner.id;
+            console.log('[Freelo Projects] User ID obtained from existing projects:', userId);
+          }
+        } catch (error: any) {
+          console.error('[Freelo Projects] Error fetching projects for user ID:', error);
+        }
+      }
+      
+      // Pokud stále nemáme userId, zkusit vytvořit projekt bez project_owner_id
+      // (Freelo API může automaticky přiřadit vlastníka podle přihlášeného uživatele)
+      const requestBody: any = {
+        name,
+        currency_iso: currencyIso
+      };
+      
+      if (userId) {
+        requestBody.project_owner_id = userId;
+        console.log('[Freelo Projects] Creating project with owner ID:', { name, currencyIso, project_owner_id: userId });
+      } else {
+        console.warn('[Freelo Projects] Creating project without owner ID (will use authenticated user):', { name, currencyIso });
+        console.warn('[Freelo Projects] Note: This may fail if project_owner_id is required by Freelo API');
+      }
+      
+      // Freelo API očekává body bez wrapperu podle dokumentace
+      let response: any;
+      try {
+        response = await freeloFetch<{ project: FreeloProject } | FreeloProject>(
+          '/projects',
+          {
+            method: 'POST',
+            body: JSON.stringify(requestBody),
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        console.log('[Freelo Projects] Project created successfully:', response);
+        
+        // Pokud jsme vytvořili projekt bez project_owner_id, zkusit získat user ID z nově vytvořeného projektu
+        if (!userId && response) {
+          const createdProject = (response as any).project || response;
+          if (createdProject.id) {
+            // Načíst detail projektu, který by měl obsahovat owner
+            try {
+              const projectDetail = await fetchProjectById(createdProject.id);
+              if (projectDetail && projectDetail.owner && projectDetail.owner.id) {
+                userId = projectDetail.owner.id;
+                console.log('[Freelo Projects] User ID obtained from created project:', userId);
+                // Aktualizovat user.value s userId
+                if (auth.user.value) {
+                  auth.user.value = {
+                    ...auth.user.value,
+                    id: userId
+                  };
+                }
+              }
+            } catch (error: any) {
+              console.warn('[Freelo Projects] Could not fetch project detail for user ID:', error);
+            }
+          }
+        }
+      } catch (error: any) {
+        // Pokud selhalo vytvoření bez project_owner_id, zkusit znovu získat user ID a zkusit znovu
+        if (!userId && error.status === 400) {
+          console.log('[Freelo Projects] Project creation failed, trying to get user ID one more time...');
+          // Zkusit znovu získat user ID
+          userId = await auth.ensureUserId();
+          if (userId) {
+            requestBody.project_owner_id = userId;
+            console.log('[Freelo Projects] Retrying project creation with owner ID:', userId);
+            response = await freeloFetch<{ project: FreeloProject } | FreeloProject>(
+              '/projects',
+              {
+                method: 'POST',
+                body: JSON.stringify(requestBody),
+                headers: {
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            console.log('[Freelo Projects] Project created successfully on retry:', response);
+          } else {
+            throw error; // Pokud stále nemáme userId, vyhodit původní chybu
+          }
+        } else {
+          throw error;
+        }
+      }
+      
+      // Po vytvoření projektu načíst projekty znovu pro synchronizaci
+      await syncProjects();
+      
+      // Freelo API může vracet buď { project: ... } nebo přímo project
+      if ((response as any).project) {
+        return (response as any).project;
+      }
+      return response as FreeloProject;
+    } catch (error: any) {
+      console.error('[Freelo Projects] Error creating project:', error);
+      throw error;
+    }
+  };
+
   return {
     fetchProjects,
     fetchAllProjects,
@@ -296,6 +437,7 @@ export const useFreeloProjects = () => {
     fetchArchivedProjects,
     fetchProjectById,
     syncProjects,
+    createProject,
   };
 };
 

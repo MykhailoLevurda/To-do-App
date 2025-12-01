@@ -1,4 +1,4 @@
-import { defineEventHandler, getQuery, readBody, getMethod } from 'h3';
+import { defineEventHandler, getQuery, readBody, readRawBody, getMethod } from 'h3';
 import axios from 'axios';
 
 const FREELO_API_BASE = 'https://api2.freelo.io/v1';
@@ -9,16 +9,28 @@ const FREELO_API_BASE = 'https://api2.freelo.io/v1';
  */
 export default defineEventHandler(async (event) => {
   // Logovat všechny requesty hned na začátku
-  const method = getMethod(event);
+  // DŮLEŽITÉ: getMethod může vrátit GET i pro POST requesty kvůli chybě při čtení body
+  // Proto zkontrolujeme i event.node.req.method
+  const methodFromGetMethod = getMethod(event);
+  const methodFromReq = event.node.req.method || methodFromGetMethod;
+  const method = methodFromReq; // Použít metodu z requestu, ne z getMethod (může být chybná)
   const path = event.context.params?.path || '';
   
   // Zkontrolovat, jestli se request vůbec dostane na server
   console.log('[Freelo Proxy] ===== INCOMING REQUEST (CATCH-ALL) =====');
-  console.log('[Freelo Proxy] Method:', method);
+  console.log('[Freelo Proxy] Method (getMethod):', methodFromGetMethod);
+  console.log('[Freelo Proxy] Method (req.method):', methodFromReq);
+  console.log('[Freelo Proxy] Method (using):', method);
   console.log('[Freelo Proxy] Path:', path);
   console.log('[Freelo Proxy] URL:', event.node.req.url);
   console.log('[Freelo Proxy] Event path:', event.path);
   console.log('[Freelo Proxy] Event context params:', event.context.params);
+  console.log('[Freelo Proxy] Request headers:', {
+    'content-type': event.node.req.headers['content-type'],
+    'content-length': event.node.req.headers['content-length'],
+    'x-freelo-email': event.node.req.headers['x-freelo-email'] ? '***' : undefined,
+    'x-freelo-api-key': event.node.req.headers['x-freelo-api-key'] ? '***' : undefined,
+  });
 
   // POZNÁMKA: Pokud vidíte tento log pro POST /task-labels/add-to-task/:id,
   // znamená to, že specifický endpoint se nevolá a request jde do catch-all.
@@ -71,7 +83,9 @@ export default defineEventHandler(async (event) => {
       method,
       path,
       url: event.node.req.url,
-      hasBody: method !== 'GET' && method !== 'HEAD'
+      hasBody: method !== 'GET' && method !== 'HEAD',
+      // Zkontrolovat, jestli body už není v event (když ho $fetch předá)
+      hasBodyInEvent: !!(event as any).body || !!(event as any).node?.req?.body
     });
     
     // Získání credentials z headers nebo body
@@ -92,40 +106,164 @@ export default defineEventHandler(async (event) => {
     }
     
     // Načíst body pouze jednou (pro POST/PUT/PATCH requesty)
-    // Nuxt 3 readBody automaticky parsuje JSON, takže dostaneme objekt
+    // Problém: readBody/readRawBody selhávají kvůli chybě "globalThis.process.getBuiltinModule is not a function"
+    // Řešení: použít přímo stream z requestu jako fallback
     let requestBody: any = undefined;
     
     if (method !== 'GET' && method !== 'HEAD') {
+      console.log('[Freelo Proxy] ===== READING BODY =====');
+      console.log('[Freelo Proxy] Method:', method);
+      console.log('[Freelo Proxy] Content-Type:', event.node.req.headers['content-type']);
+      console.log('[Freelo Proxy] Content-Length:', event.node.req.headers['content-length']);
+      console.log('[Freelo Proxy] Request readable:', event.node.req.readable);
+      console.log('[Freelo Proxy] Request readableEnded:', event.node.req.readableEnded);
+      
+      // Zkusit nejdřív readBody (pro $fetch requesty už může být body zpracované)
+      let bodyReadSuccessfully = false;
+      
       try {
-        console.log('[Freelo Proxy] Reading body for', method, 'request...');
-        console.log('[Freelo Proxy] Content-Type:', event.node.req.headers['content-type']);
-        console.log('[Freelo Proxy] Content-Length:', event.node.req.headers['content-length']);
-        
+        console.log('[Freelo Proxy] Attempting readBody first (for $fetch compatibility)...');
         requestBody = await readBody(event);
+        console.log('[Freelo Proxy] ✅ Successfully read body from readBody');
+        console.log('[Freelo Proxy] readBody result type:', typeof requestBody);
+        console.log('[Freelo Proxy] readBody result keys:', requestBody && typeof requestBody === 'object' ? Object.keys(requestBody) : 'N/A');
+        bodyReadSuccessfully = true;
+      } catch (readBodyError: any) {
+        console.warn('[Freelo Proxy] ⚠️ readBody failed:', readBodyError.message);
+        console.warn('[Freelo Proxy] readBody error type:', readBodyError.name);
         
-        console.log('[Freelo Proxy] Body read successfully:', {
-          type: typeof requestBody,
-          isObject: typeof requestBody === 'object',
-          isArray: Array.isArray(requestBody),
-          keys: requestBody && typeof requestBody === 'object' ? Object.keys(requestBody) : [],
-          preview: typeof requestBody === 'string' 
-            ? requestBody.substring(0, 200) 
-            : JSON.stringify(requestBody).substring(0, 200)
-        });
-        
-        // Zkusit získat credentials z body, pokud nejsou v headers
-        if (!email || !apiKey) {
-          email = requestBody?.email || email;
-          apiKey = requestBody?.apiKey || apiKey;
+        // Pokud readBody selže kvůli srvx chybě, zkusit readRawBody
+        try {
+          console.log('[Freelo Proxy] Attempting readRawBody...');
+          const rawBody = await readRawBody(event, 'utf8');
+          console.log('[Freelo Proxy] readRawBody completed, length:', rawBody?.length || 0);
+          
+          if (rawBody && rawBody.trim()) {
+            console.log('[Freelo Proxy] Raw body preview:', rawBody.substring(0, 200));
+            try {
+              requestBody = JSON.parse(rawBody);
+              console.log('[Freelo Proxy] ✅ Successfully read and parsed body from readRawBody');
+              console.log('[Freelo Proxy] Parsed body keys:', Object.keys(requestBody || {}));
+              bodyReadSuccessfully = true;
+            } catch (parseError: any) {
+              console.error('[Freelo Proxy] ❌ Failed to parse body as JSON:', parseError.message);
+              event.node.res.statusCode = 400;
+              return {
+                error: 'Invalid JSON in request body',
+                details: process.env.NODE_ENV === 'development' ? {
+                  parseError: parseError.message,
+                  bodyPreview: rawBody.substring(0, 200)
+                } : undefined
+              };
+            }
+          } else {
+            console.warn('[Freelo Proxy] ⚠️ Empty body received from readRawBody');
+            requestBody = {};
+            bodyReadSuccessfully = true; // Empty body is OK
+          }
+        } catch (readRawBodyError: any) {
+          console.warn('[Freelo Proxy] ⚠️ readRawBody also failed:', readRawBodyError.message);
+          
+          // Pokud obě metody selžou kvůli srvx chybě, zkusit načíst body přímo ze streamu
+          // Toto je workaround pro chybu "globalThis.process.getBuiltinModule is not a function"
+          try {
+            console.log('[Freelo Proxy] Attempting to read body directly from stream (workaround for srvx error)...');
+            
+            // Načíst body přímo ze streamu
+            const chunks: Buffer[] = [];
+            const req = event.node.req;
+            
+            // Zkontrolovat, jestli stream ještě není spotřebovaný
+            if (req.readableEnded) {
+              console.error('[Freelo Proxy] ❌ Request stream already ended, cannot read body');
+              throw new Error('Request stream already consumed');
+            }
+            
+            // Načíst všechny chunky
+            for await (const chunk of req) {
+              chunks.push(Buffer.from(chunk));
+            }
+            
+            if (chunks.length > 0) {
+              const bodyBuffer = Buffer.concat(chunks);
+              const bodyString = bodyBuffer.toString('utf-8');
+              
+              if (bodyString && bodyString.trim()) {
+                console.log('[Freelo Proxy] Stream body length:', bodyString.length);
+                console.log('[Freelo Proxy] Stream body preview:', bodyString.substring(0, 200));
+                
+                try {
+                  requestBody = JSON.parse(bodyString);
+                  console.log('[Freelo Proxy] ✅ Successfully read and parsed body from stream');
+                  console.log('[Freelo Proxy] Parsed body keys:', Object.keys(requestBody || {}));
+                  bodyReadSuccessfully = true;
+                } catch (parseError: any) {
+                  console.error('[Freelo Proxy] ❌ Failed to parse stream body as JSON:', parseError.message);
+                  event.node.res.statusCode = 400;
+                  return {
+                    error: 'Invalid JSON in request body',
+                    details: process.env.NODE_ENV === 'development' ? {
+                      parseError: parseError.message,
+                      bodyPreview: bodyString.substring(0, 200)
+                    } : undefined
+                  };
+                }
+              } else {
+                console.warn('[Freelo Proxy] ⚠️ Empty body from stream');
+                requestBody = {};
+                bodyReadSuccessfully = true; // Empty body is OK
+              }
+            } else {
+              console.warn('[Freelo Proxy] ⚠️ No chunks in stream');
+              requestBody = {};
+              bodyReadSuccessfully = true; // Empty body is OK
+            }
+          } catch (streamError: any) {
+            console.error('[Freelo Proxy] ❌ All methods failed to read body!');
+            console.error('[Freelo Proxy] Stream error:', streamError.message);
+            
+            // Pokud všechny metody selžou, vrátit chybu
+            event.node.res.statusCode = 500;
+            return {
+              error: 'Failed to read request body. This is a known Nuxt dev server issue with srvx adapter.',
+              details: process.env.NODE_ENV === 'development' ? {
+                readBodyError: readBodyError.message,
+                readRawBodyError: readRawBodyError.message,
+                streamError: streamError.message,
+                suggestion: 'This is a known issue with Nuxt dev server. Try: 1) Restart dev server, 2) Update Nuxt to latest version, 3) Use production build'
+              } : undefined
+            };
+          }
         }
-      } catch (error: any) {
-        console.error('[Freelo Proxy] Error reading body:', {
-          error: error.message,
-          stack: error.stack,
-          name: error.name,
-          code: error.code
-        });
-        requestBody = {};
+      }
+      
+      if (!bodyReadSuccessfully) {
+        console.error('[Freelo Proxy] ❌ Body was not read successfully');
+        event.node.res.statusCode = 500;
+        return {
+          error: 'Failed to read request body',
+          details: process.env.NODE_ENV === 'development' ? {
+            suggestion: 'Check server logs for more details'
+          } : undefined
+        };
+      }
+      
+      console.log('[Freelo Proxy] Body read successfully:', {
+        type: typeof requestBody,
+        isObject: typeof requestBody === 'object',
+        isArray: Array.isArray(requestBody),
+        keys: requestBody && typeof requestBody === 'object' ? Object.keys(requestBody) : [],
+        preview: typeof requestBody === 'string' 
+          ? requestBody.substring(0, 200) 
+          : requestBody !== undefined 
+            ? (JSON.stringify(requestBody) || '').substring(0, 200)
+            : '(no body)'
+      });
+      
+      // Zkusit získat credentials z body, pokud nejsou v headers
+      if (!email || !apiKey) {
+        email = requestBody?.email || email;
+        apiKey = requestBody?.apiKey || apiKey;
       }
     }
     
@@ -147,17 +285,28 @@ export default defineEventHandler(async (event) => {
     // User-Agent header je povinný podle dokumentace
     const userAgent = 'Scrum Board (server-proxy)';
     
-    // Připravit body pro Freelo API (stringifyovat objekt bez credentials)
-    let freeloRequestBody: string | undefined = undefined;
+    // Připravit body pro Freelo API (objekt bez credentials)
+    let freeloRequestBody: any = undefined;
     
     if (requestBody) {
       // Odstranit credentials z body před odesláním do Freelo API
       if (typeof requestBody === 'object' && (requestBody.email || requestBody.apiKey)) {
         const { email: _, apiKey: __, ...rest } = requestBody;
-        freeloRequestBody = JSON.stringify(rest);
+        freeloRequestBody = rest;
       } else {
-        freeloRequestBody = JSON.stringify(requestBody);
+        freeloRequestBody = requestBody;
       }
+    }
+    
+    // Speciální handling pro update task
+    // Podle Freelo API dokumentace: POST /task/{task_id} s body bez wrapperu "task"
+    const isUpdateTask = method === 'POST' && path.match(/^task\/\d+$/);
+    
+    // Pro update task: pokud body má wrapper "task", odstranit ho
+    // (pro kompatibilitu, ale správný formát je bez wrapperu)
+    if (isUpdateTask && freeloRequestBody && typeof freeloRequestBody === 'object' && freeloRequestBody.task) {
+      console.log('[Freelo Proxy] Update task: removing "task" wrapper from body');
+      freeloRequestBody = freeloRequestBody.task;
     }
     
     // Debug logging (pouze v development)
@@ -166,9 +315,10 @@ export default defineEventHandler(async (event) => {
         method,
         url,
         path,
+        isUpdateTask,
         hasBody: !!freeloRequestBody,
-        bodyPreview: freeloRequestBody ? freeloRequestBody.substring(0, 200) : undefined,
-        bodyLength: freeloRequestBody?.length || 0,
+        bodyPreview: freeloRequestBody ? (JSON.stringify(freeloRequestBody) || '').substring(0, 200) : undefined,
+        bodyKeys: freeloRequestBody && typeof freeloRequestBody === 'object' ? Object.keys(freeloRequestBody) : [],
       });
     }
     
@@ -187,7 +337,7 @@ export default defineEventHandler(async (event) => {
       };
       
       if (freeloRequestBody) {
-        axiosConfig.data = JSON.parse(freeloRequestBody);
+        axiosConfig.data = freeloRequestBody;
       }
       
       const response = await axios(axiosConfig);
@@ -202,7 +352,8 @@ export default defineEventHandler(async (event) => {
           url,
           method,
           path,
-          requestBody: process.env.NODE_ENV === 'development' ? (freeloRequestBody ? JSON.parse(freeloRequestBody) : undefined) : undefined,
+          isUpdateTask,
+          requestBody: process.env.NODE_ENV === 'development' ? freeloRequestBody : undefined,
           responseData: response.data
         });
         
@@ -211,9 +362,10 @@ export default defineEventHandler(async (event) => {
           status: response.status,
           details: process.env.NODE_ENV === 'development' ? { 
             ...response.data, 
-            requestBody: freeloRequestBody ? JSON.parse(freeloRequestBody) : undefined,
+            requestBody: freeloRequestBody,
             url,
-            method
+            method,
+            isUpdateTask
           } : undefined,
         };
       }
@@ -240,22 +392,37 @@ export default defineEventHandler(async (event) => {
       };
     }
   } catch (error: any) {
+    console.error('[Freelo Proxy] ===== UNHANDLED ERROR =====');
     console.error('[Freelo Proxy] Error:', error);
+    console.error('[Freelo Proxy] Error type:', typeof error);
+    console.error('[Freelo Proxy] Error name:', error.name);
+    console.error('[Freelo Proxy] Error message:', error.message);
+    console.error('[Freelo Proxy] Error stack:', error.stack);
     console.error('[Freelo Proxy] Error details:', {
       method: getMethod(event),
       path: event.context.params?.path || '',
       url: event.node.req.url,
       errorMessage: error.message,
       errorName: error.name,
-      errorStack: error.stack,
+      errorStack: error.stack ? error.stack.substring(0, 1000) : undefined,
+      errorCause: error.cause,
     });
-    event.node.res.statusCode = 500;
+    
+    // Ujistit se, že status code je nastaven
+    if (!event.node.res.headersSent) {
+      event.node.res.statusCode = 500;
+      event.node.res.setHeader('Content-Type', 'application/json');
+    }
+    
     return {
       error: error.message || 'Internal server error',
+      status: 500,
       details: process.env.NODE_ENV === 'development' ? {
         message: error.message,
         name: error.name,
-        stack: error.stack
+        stack: error.stack ? error.stack.substring(0, 1000) : undefined,
+        path: event.context.params?.path || '',
+        method: getMethod(event),
       } : undefined,
     };
   }

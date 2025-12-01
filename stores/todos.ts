@@ -12,6 +12,7 @@ export interface TaskItem {
   dueDate?: Date;
   createdAt: Date;
   updatedAt: Date;
+  approved?: boolean; // Pro schválení dokončených úkolů
 }
 
 export interface ScrumBoardState {
