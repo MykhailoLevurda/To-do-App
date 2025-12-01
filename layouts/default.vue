@@ -9,6 +9,8 @@ import {
 } from '@heroicons/vue/24/outline'
 
 const auth = useFreeloAuth()
+const projectsStore = useProjectsStore()
+const route = useRoute()
 const showAuthModal = ref(false)
 const showUserProfileModal = ref(false)
 
@@ -40,6 +42,11 @@ const userMenuItems = computed(() => {
     ]
   ]
 })
+
+// Check if project is active
+const isProjectActive = (projectId: string) => {
+  return route.params.id === projectId
+}
 </script>
 
 <template>
@@ -62,6 +69,27 @@ const userMenuItems = computed(() => {
               <FolderIcon class="w-5 h-5" />
               Projekty
             </NuxtLink>
+
+            <!-- Projects List -->
+            <div v-if="projectsStore.activeProjects.length > 0" class="ml-2 mt-1 space-y-1 max-h-[400px] overflow-y-auto">
+              <NuxtLink
+                v-for="project in projectsStore.activeProjects"
+                :key="project.id"
+                :to="`/projects/${project.id}`"
+                class="flex items-center gap-2 text-left px-3 py-2 rounded-lg text-sm transition-colors"
+                :class="[
+                  isProjectActive(project.id)
+                    ? 'bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 font-medium'
+                    : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
+                ]"
+              >
+                <div 
+                  class="w-2 h-2 rounded-full flex-shrink-0"
+                  :style="{ backgroundColor: project.color }"
+                ></div>
+                <span class="truncate">{{ project.name }}</span>
+              </NuxtLink>
+            </div>
 
             <button class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
               <CalendarIcon class="w-5 h-5" />
