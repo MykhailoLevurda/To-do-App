@@ -4,6 +4,135 @@ Tento dokument popisuje všechny externí služby používané v projektu, jak j
 
 ---
 
+## Instalace a spuštění projektu
+
+### Požadavky
+
+- **Node.js** v22 nebo vyšší (doporučeno použít NVM pro správu verzí)
+- **npm** (součást Node.js)
+- **Git** pro klonování repozitáře
+
+### Instalace závislostí
+
+1. **Naklonujte repozitář:**
+   ```bash
+   git clone https://gitlab.com/freeloapp/scrum-board.git
+   cd scrum-board
+   ```
+
+2. **Nainstalujte závislosti:**
+   ```bash
+   npm install
+   ```
+
+   Tento příkaz nainstaluje všechny potřebné balíčky definované v `package.json`:
+   - **Nuxt 3** - Vue.js framework
+   - **@nuxt/ui** - UI komponenty
+   - **Pinia** - State management
+   - **Firebase** - Pro ukládání credentials
+   - **Axios** - HTTP klient
+   - A další závislosti...
+
+### Konfigurace prostředí
+
+1. **Vytvořte soubor `.env` v kořenovém adresáři projektu:**
+   ```bash
+   cp .env.example .env  # Pokud existuje .env.example
+   ```
+
+2. **Nastavte Firebase konfiguraci** (povinné):
+   ```env
+   NUXT_PUBLIC_FIREBASE_API_KEY=your-api-key
+   NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+   NUXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
+   NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+   NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+   NUXT_PUBLIC_FIREBASE_APP_ID=your-app-id
+   ```
+
+3. **Nastavte Freelo API credentials** (volitelné, pro vývoj):
+   ```env
+   NUXT_PUBLIC_FREELO_EMAIL=vas@email.com
+   NUXT_PUBLIC_FREELO_API_KEY=vash-api-klic
+   ```
+
+4. **Nastavte další volitelné proměnné:**
+   ```env
+   NUXT_PUBLIC_WS_URL=ws://localhost:3002
+   NUXT_PUBLIC_WS_ENABLED=true
+   NUXT_PUBLIC_APP_NAME=Scrum Board
+   ```
+
+### Spuštění projektu
+
+#### Vývojový režim (Development)
+
+**Základní spuštění:**
+```bash
+npm run dev
+```
+
+Aplikace poběží na `http://localhost:3000`
+
+**Spuštění s WebSocket serverem:**
+```bash
+npm run dev:all
+```
+
+Tento příkaz spustí současně:
+- Nuxt dev server na portu 3000
+- WebSocket server na portu 3002
+
+**Pouze WebSocket server:**
+```bash
+npm run dev:ws
+```
+
+#### Produkční build
+
+**Vytvoření produkčního buildu:**
+```bash
+npm run build
+```
+
+**Spuštění produkčního serveru:**
+```bash
+npm run start
+```
+
+#### Další užitečné příkazy
+
+**Type checking:**
+```bash
+npm run typecheck
+```
+
+**Nasazení Firestore indexů:**
+```bash
+npm run firebase:indexes
+```
+
+### Řešení problémů
+
+**Port 3000 je obsazený:**
+- Zkontrolujte, zda neběží jiná instance aplikace
+- Ukončete proces: `netstat -ano | findstr :3000` a pak `taskkill /PID <číslo> /F` (Windows)
+- Nebo změňte port v `nuxt.config.ts`
+
+**Chyby při instalaci závislostí:**
+- Zkontrolujte verzi Node.js: `node --version` (mělo by být v22+)
+- Vymažte `node_modules` a `package-lock.json` a zkuste znovu:
+  ```bash
+  rm -rf node_modules package-lock.json
+  npm install
+  ```
+
+**Problémy s Firebase:**
+- Ověřte, že všechny Firebase proměnné jsou správně nastaveny v `.env`
+- Zkontrolujte, že Firebase projekt existuje a je aktivní
+
+---
+
 ## Externí služby
 
 ### 1. Freelo API
