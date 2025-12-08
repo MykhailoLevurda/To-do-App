@@ -102,6 +102,7 @@ export const useFreeloApi = () => {
     const envApiKey = config.public.freeloApiKey;
     
     if (envEmail && envApiKey) {
+      console.log('[Freelo API] Using credentials from .env');
       return { email: envEmail, apiKey: envApiKey };
     }
     
@@ -110,26 +111,72 @@ export const useFreeloApi = () => {
     
     // Zkusit načíst z localStorage email (pouze pro identifikaci)
     const email = localStorage.getItem('freelo_email');
-    if (!email) return null;
+    console.log('[Freelo API] Email from localStorage:', email || 'NOT FOUND');
+    
+    if (!email) {
+      console.log('[Freelo API] No email in localStorage, returning null');
+      return null;
+    }
     
     // Načíst API klíč z Firestore
     const firestoreUsers = useFirestoreUsers();
     const credentials = await firestoreUsers.getUserCredentials(email);
     
-    if (!credentials || !credentials.apiKey) return null;
+    if (!credentials) {
+      console.warn('[Freelo API] No credentials found in Firestore for email:', email);
+      return null;
+    }
     
+    if (!credentials.apiKey) {
+      console.warn('[Freelo API] Credentials found but API key is empty for email:', email);
+      return null;
+    }
+    
+    console.log('[Freelo API] Credentials loaded from Firestore for email:', email, 'API key length:', credentials.apiKey.length);
     return { email: credentials.email, apiKey: credentials.apiKey };
   };
 
   const setCredentials = async (email: string, apiKey: string) => {
-    if (!process.client) return;
+    if (!process.client) {
+      console.warn('[Freelo API] setCredentials called on server, skipping');
+      return;
+    }
     
-    // Uložit email do localStorage (pro rychlou identifikaci)
-    localStorage.setItem('freelo_email', email);
+    if (!email || !apiKey) {
+      console.error('[Freelo API] Cannot set credentials - email or API key is empty:', { email: !!email, apiKey: !!apiKey });
+      return;
+    }
     
-    // Uložit credentials do Firestore
-    const firestoreUsers = useFirestoreUsers();
-    await firestoreUsers.saveUserCredentials(email, apiKey);
+    console.log('[Freelo API] Setting credentials for email:', email);
+    console.log('[Freelo API] API key length:', apiKey?.length || 0);
+    
+    try {
+      // Uložit email do localStorage (pro rychlou identifikaci)
+      const oldEmail = localStorage.getItem('freelo_email');
+      localStorage.setItem('freelo_email', email);
+      console.log('[Freelo API] Email saved to localStorage:', email, oldEmail ? `(was: ${oldEmail})` : '(new)');
+      
+      // Uložit credentials do Firestore
+      const firestoreUsers = useFirestoreUsers();
+      const result = await firestoreUsers.saveUserCredentials(email, apiKey);
+      
+      if (result) {
+        console.log('[Freelo API] ✅ Credentials saved to Firestore successfully, user ID:', result);
+        
+        // Ověřit, že se credentials skutečně uložily
+        const verifyCredentials = await firestoreUsers.getUserCredentials(email);
+        if (verifyCredentials && verifyCredentials.apiKey) {
+          console.log('[Freelo API] ✅ Credentials verified in Firestore, API key length:', verifyCredentials.apiKey.length);
+        } else {
+          console.error('[Freelo API] ❌ Credentials NOT found in Firestore after saving!');
+        }
+      } else {
+        console.error('[Freelo API] ❌ Failed to save credentials to Firestore!');
+      }
+    } catch (error: any) {
+      console.error('[Freelo API] ❌ Error setting credentials:', error);
+      throw error;
+    }
   };
 
   const clearCredentials = async () => {
@@ -174,8 +221,8 @@ export const useFreeloApi = () => {
       console.log('[Freelo API] Request body:', options.body);
       console.log('[Freelo API] Request headers:', {
         'Content-Type': 'application/json',
-        'X-Freelo-Email': credentials.email ? '***' : undefined,
-        'X-Freelo-Api-Key': credentials.apiKey ? '***' : undefined,
+        'x-freelo-email': credentials.email ? '***' : undefined,
+        'x-freelo-api-key': credentials.apiKey ? '***' : undefined,
         'Authorization': 'Basic ***'
       });
     }
@@ -201,8 +248,8 @@ export const useFreeloApi = () => {
           method: options.method as any,
           headers: {
             'Authorization': getAuthHeader(credentials),
-            'X-Freelo-Email': credentials.email,
-            'X-Freelo-Api-Key': credentials.apiKey,
+            'x-freelo-email': credentials.email,
+            'x-freelo-api-key': credentials.apiKey,
             'Content-Type': 'application/json',
             ...options.headers as any,
           },
@@ -243,8 +290,8 @@ export const useFreeloApi = () => {
         method: options.method || 'GET',
         headers: {
           'Authorization': getAuthHeader(credentials),
-          'X-Freelo-Email': credentials.email,
-          'X-Freelo-Api-Key': credentials.apiKey,
+          'x-freelo-email': credentials.email,
+          'x-freelo-api-key': credentials.apiKey,
           'Content-Type': 'application/json',
           ...options.headers,
         },
@@ -302,8 +349,8 @@ export const useFreeloApi = () => {
         method: 'GET',
         headers: {
           'Authorization': authHeader,
-          'X-Freelo-Email': email,
-          'X-Freelo-Api-Key': apiKey,
+          'x-freelo-email': email,
+          'x-freelo-api-key': apiKey,
         },
       });
 

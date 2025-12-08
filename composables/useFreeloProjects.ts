@@ -99,115 +99,153 @@ export const useFreeloProjects = () => {
    * Synchronizuje projekty z Freelo do store
    * Načte vlastní projekty i pozvané projekty a spojí je dohromady
    */
+  // Flag pro sledování, jestli se syncProjects právě provádí
+  let isSyncing = false;
+  let syncPromise: Promise<Project[]> | null = null;
+
   const syncProjects = async () => {
-    try {
-      projectsStore.setLoading(true);
-      
-      const allProjects: FreeloProject[] = [];
-      
-      // 1. Načíst vlastní aktivní projekty
+    // Pokud se už synchronizace provádí, vrátit existující promise
+    if (isSyncing && syncPromise) {
+      console.log('[Freelo Projects] Sync already in progress, returning existing promise');
+      return syncPromise;
+    }
+
+    // Vytvořit nový promise pro synchronizaci
+    syncPromise = (async () => {
+      isSyncing = true;
       try {
-        const ownProjects = await fetchProjects();
-        console.log('[Freelo Projects] Fetched', ownProjects.length, 'own projects from /projects');
-        allProjects.push(...ownProjects);
-      } catch (error: any) {
-        console.warn('[Freelo Projects] Error fetching own projects:', error);
-      }
-      
-      // 2. Načíst pozvané projekty
-      try {
-        const invitedResponse = await fetchInvitedProjects(0);
-        if (invitedResponse && invitedResponse.data && invitedResponse.data.invited_projects) {
-          const invitedProjects = invitedResponse.data.invited_projects;
-          console.log('[Freelo Projects] Fetched', invitedProjects.length, 'invited projects from /invited-projects');
-          allProjects.push(...invitedProjects);
-        }
-      } catch (error: any) {
-        console.warn('[Freelo Projects] Error fetching invited projects:', error);
-      }
-      
-      // 3. Pokud stále není žádný projekt, zkusit /all-projects jako fallback
-      if (allProjects.length === 0) {
-        console.log('[Freelo Projects] No projects found, trying /all-projects as fallback...');
+        projectsStore.setLoading(true);
+        
+        const allProjects: FreeloProject[] = [];
+        
+        // 1. Načíst vlastní aktivní projekty
         try {
-          const allProjectsResponse = await fetchAllProjects(0, 'date_add', 'desc');
-          if (allProjectsResponse && allProjectsResponse.data && allProjectsResponse.data.projects) {
-            const fallbackProjects = allProjectsResponse.data.projects;
-            console.log('[Freelo Projects] Fetched', fallbackProjects.length, 'projects from /all-projects (fallback)');
-            allProjects.push(...fallbackProjects);
+          const ownProjects = await fetchProjects();
+          console.log('[Freelo Projects] Fetched', ownProjects.length, 'own projects from /projects');
+          allProjects.push(...ownProjects);
+        } catch (error: any) {
+          console.warn('[Freelo Projects] Error fetching own projects:', error);
+        }
+        
+        // 2. Načíst pozvané projekty
+        try {
+          const invitedResponse = await fetchInvitedProjects(0);
+          if (invitedResponse && invitedResponse.data && invitedResponse.data.invited_projects) {
+            const invitedProjects = invitedResponse.data.invited_projects;
+            console.log('[Freelo Projects] Fetched', invitedProjects.length, 'invited projects from /invited-projects');
+            allProjects.push(...invitedProjects);
           }
         } catch (error: any) {
-          console.warn('[Freelo Projects] Error fetching all-projects:', error);
+          console.warn('[Freelo Projects] Error fetching invited projects:', error);
         }
-      }
-      
-      // 4. Odstranit duplicity (podle ID)
-      const uniqueProjects = allProjects.filter((project, index, self) =>
-        index === self.findIndex((p) => p.id === project.id)
-      );
-      
-      console.log('[Freelo Projects] Total unique projects:', uniqueProjects.length, '(own + invited)');
-      
-      if (uniqueProjects.length === 0) {
-        console.warn('[Freelo Projects] No projects found. User might not have any projects in Freelo.');
-        projectsStore.setProjects([]);
-        projectsStore.setLoading(false);
-        return [];
-      }
-      
-      const freeloProjects = uniqueProjects;
-      
-      // Převod Freelo projektů na formát používaný v aplikaci
-      const projects = freeloProjects.map((fp: FreeloProject) => {
-        console.log('[Freelo Projects] Processing project:', fp.id, fp.name, 'state:', fp.state);
         
-        // Správné mapování stavu projektu
-        // Freelo API: state.id 1 = active, 2 = archived, 3 = template
-        // state.state = "active" | "archived" | "template"
-        let projectStatus: 'active' | 'archived' = 'active';
+        // 3. Pokud stále není žádný projekt, zkusit /all-projects jako fallback
+        if (allProjects.length === 0) {
+          console.log('[Freelo Projects] No projects found, trying /all-projects as fallback...');
+          try {
+            const allProjectsResponse = await fetchAllProjects(0, 'date_add', 'desc');
+            if (allProjectsResponse && allProjectsResponse.data && allProjectsResponse.data.projects) {
+              const fallbackProjects = allProjectsResponse.data.projects;
+              console.log('[Freelo Projects] Fetched', fallbackProjects.length, 'projects from /all-projects (fallback)');
+              allProjects.push(...fallbackProjects);
+            }
+          } catch (error: any) {
+            console.warn('[Freelo Projects] Error fetching all-projects:', error);
+          }
+        }
         
-        if (fp.state) {
-          // Pokud má state objekt, použít jeho hodnotu
-          if (fp.state.state === 'archived' || fp.state.id === 2) {
-            projectStatus = 'archived';
-          } else if (fp.state.state === 'active' || fp.state.id === 1) {
-            projectStatus = 'active';
+        // 4. Odstranit duplicity (podle ID) - použít Map pro lepší výkon
+        const projectsMap = new Map<number, FreeloProject>();
+        for (const project of allProjects) {
+          if (project.id && !projectsMap.has(project.id)) {
+            projectsMap.set(project.id, project);
+          }
+        }
+        const uniqueProjects = Array.from(projectsMap.values());
+        
+        console.log('[Freelo Projects] Total unique projects:', uniqueProjects.length, '(own + invited, removed', allProjects.length - uniqueProjects.length, 'duplicates)');
+      
+        if (uniqueProjects.length === 0) {
+          console.warn('[Freelo Projects] No projects found. User might not have any projects in Freelo.');
+          projectsStore.setProjects([]);
+          projectsStore.setLoading(false);
+          return [];
+        }
+        
+        const freeloProjects = uniqueProjects;
+        
+        // Převod Freelo projektů na formát používaný v aplikaci
+        const projects = freeloProjects.map((fp: FreeloProject) => {
+          console.log('[Freelo Projects] Processing project:', fp.id, fp.name, 'state:', fp.state);
+          
+          // Správné mapování stavu projektu
+          // Freelo API: state.id 1 = active, 2 = archived, 3 = template
+          // state.state = "active" | "archived" | "template"
+          let projectStatus: 'active' | 'archived' = 'active';
+          
+          if (fp.state) {
+            // Pokud má state objekt, použít jeho hodnotu
+            if (fp.state.state === 'archived' || fp.state.id === 2) {
+              projectStatus = 'archived';
+            } else if (fp.state.state === 'active' || fp.state.id === 1) {
+              projectStatus = 'active';
+            } else {
+              // Pro template nebo jiné stavy - považovat za active
+              projectStatus = 'active';
+            }
           } else {
-            // Pro template nebo jiné stavy - považovat za active
+            // Pokud není state objekt, považovat za active (default)
             projectStatus = 'active';
           }
-        } else {
-          // Pokud není state objekt, považovat za active (default)
-          projectStatus = 'active';
+          
+          return {
+            id: `freelo-${fp.id}`, // Prefix pro rozlišení od Firestore projektů
+            name: fp.name,
+            description: '', // Freelo API neposkytuje description v základním endpointu
+            color: generateColorFromId(fp.id),
+            createdBy: fp.owner?.id?.toString() || 'unknown',
+            status: projectStatus,
+            taskCount: fp.tasklists?.length || 0,
+            teamMembers: [], // Budeme muset načíst z jiného endpointu
+            createdAt: new Date(fp.date_add),
+            updatedAt: new Date(fp.date_edited_at),
+            freeloId: fp.id, // Uložení původního Freelo ID
+            freeloData: fp, // Uložení celých dat pro případné další použití
+          };
+        });
+
+        // 5. Odstranit duplicity v již načtených projektech (podle ID)
+        const existingProjectsMap = new Map<string, Project>();
+        for (const project of projectsStore.projects) {
+          existingProjectsMap.set(project.id, project);
         }
         
-        return {
-          id: `freelo-${fp.id}`, // Prefix pro rozlišení od Firestore projektů
-          name: fp.name,
-          description: '', // Freelo API neposkytuje description v základním endpointu
-          color: generateColorFromId(fp.id),
-          createdBy: fp.owner?.id?.toString() || 'unknown',
-          status: projectStatus,
-          taskCount: fp.tasklists?.length || 0,
-          teamMembers: [], // Budeme muset načíst z jiného endpointu
-          createdAt: new Date(fp.date_add),
-          updatedAt: new Date(fp.date_edited_at),
-          freeloId: fp.id, // Uložení původního Freelo ID
-          freeloData: fp, // Uložení celých dat pro případné další použití
-        };
-      });
-
-      projectsStore.setProjects(projects);
-      projectsStore.setLoading(false);
-      
-      console.log('[Freelo Projects] Synced', projects.length, 'projects');
-      
-      return projects;
-    } catch (error: any) {
-      projectsStore.setLoading(false);
-      console.error('[Freelo Projects] Sync error:', error);
-      throw error;
-    }
+        // Přidat nové projekty, ale nepřidávat duplicity
+        for (const project of projects) {
+          if (!existingProjectsMap.has(project.id)) {
+            existingProjectsMap.set(project.id, project);
+          }
+        }
+        
+        // Nastavit všechny projekty (bez duplikátů)
+        const finalProjects = Array.from(existingProjectsMap.values());
+        projectsStore.setProjects(finalProjects);
+        projectsStore.setLoading(false);
+        
+        console.log('[Freelo Projects] Synced', finalProjects.length, 'projects (removed', projects.length - finalProjects.length, 'duplicates from store)');
+        
+        return finalProjects;
+      } catch (error: any) {
+        projectsStore.setLoading(false);
+        console.error('[Freelo Projects] Sync error:', error);
+        throw error;
+      } finally {
+        isSyncing = false;
+        syncPromise = null;
+      }
+    })();
+    
+    return syncPromise;
   };
 
   /**

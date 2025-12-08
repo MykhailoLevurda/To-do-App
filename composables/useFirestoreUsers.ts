@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   addDoc,
+  setDoc,
   updateDoc,
   getDoc,
   query,
@@ -26,6 +27,8 @@ export const useFirestoreUsers = () => {
    */
   const saveUserCredentials = async (email: string, apiKey: string): Promise<string | null> => {
     try {
+      console.log('[Firestore Users] Saving credentials for email:', email, 'API key length:', apiKey?.length || 0);
+      
       const usersRef = collection(firestore, 'users');
       
       // Zkontrolovat, jestli uživatel už existuje
@@ -35,19 +38,53 @@ export const useFirestoreUsers = () => {
       if (!snapshot.empty) {
         // Aktualizovat existujícího uživatele
         const userDoc = snapshot.docs[0];
-        await updateDoc(userDoc.ref, {
-          apiKey, // V produkci by měl být šifrovaný
-          updatedAt: serverTimestamp(),
-        });
+        console.log('[Firestore Users] Updating existing user:', userDoc.id);
+        console.log('[Firestore Users] Current document data:', userDoc.data());
+        
+        try {
+          // Zkusit nejdřív setDoc s merge
+          await setDoc(userDoc.ref, {
+            email,
+            apiKey, // V produkci by měl být šifrovaný
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+          console.log('[Firestore Users] ✅ User credentials saved using setDoc with merge');
+        } catch (setDocError: any) {
+          console.error('[Firestore Users] ❌ setDoc failed, trying updateDoc:', setDocError);
+          // Fallback na updateDoc
+          try {
+            await updateDoc(userDoc.ref, {
+              apiKey, // V produkci by měl být šifrovaný
+              updatedAt: serverTimestamp(),
+            });
+            console.log('[Firestore Users] ✅ User credentials saved using updateDoc');
+          } catch (updateError: any) {
+            console.error('[Firestore Users] ❌ Both setDoc and updateDoc failed:', updateError);
+            throw updateError;
+          }
+        }
+        
+        // Ověřit, že se aktualizace skutečně provedla
+        const updatedDoc = await getDoc(userDoc.ref);
+        const updatedData = updatedDoc.data();
+        console.log('[Firestore Users] Verified updated document, API key length:', updatedData?.apiKey?.length || 0);
+        
+        if (!updatedData?.apiKey || updatedData.apiKey.length === 0) {
+          console.error('[Firestore Users] ❌ API key is still empty after update!');
+          throw new Error('API key was not saved correctly');
+        }
+        
         return userDoc.id;
       } else {
         // Vytvořit nového uživatele
+        console.log('[Firestore Users] Creating new user');
         const docRef = await addDoc(usersRef, {
           email,
           apiKey, // V produkci by měl být šifrovaný
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        console.log('[Firestore Users] ✅ New user created with ID:', docRef.id);
         return docRef.id;
       }
     } catch (error) {
@@ -61,18 +98,30 @@ export const useFirestoreUsers = () => {
    */
   const getUserCredentials = async (email: string): Promise<{ email: string; apiKey: string } | null> => {
     try {
+      console.log('[Firestore Users] Getting credentials for email:', email);
+      
       const usersRef = collection(firestore, 'users');
       const q = query(usersRef, where('email', '==', email));
       const snapshot = await getDocs(q);
       
       if (snapshot.empty) {
+        console.warn('[Firestore Users] No user found with email:', email);
         return null;
       }
       
       const userData = snapshot.docs[0].data();
+      const apiKey = userData.apiKey;
+      
+      console.log('[Firestore Users] User found, API key length:', apiKey?.length || 0);
+      
+      if (!apiKey) {
+        console.warn('[Firestore Users] User found but API key is empty for email:', email);
+        return null;
+      }
+      
       return {
         email: userData.email,
-        apiKey: userData.apiKey, // V produkci by měl být dešifrovaný
+        apiKey: apiKey, // V produkci by měl být dešifrovaný
       };
     } catch (error) {
       console.error('[Firestore Users] Error getting user credentials:', error);
@@ -113,5 +162,6 @@ export const useFirestoreUsers = () => {
     deleteUserCredentials,
   };
 };
+
 
 

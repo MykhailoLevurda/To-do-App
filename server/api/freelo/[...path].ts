@@ -92,16 +92,42 @@ export default defineEventHandler(async (event) => {
     let email: string | undefined;
     let apiKey: string | undefined;
     
+    // Debug: logovat všechny dostupné headers
+    console.log('[Freelo Proxy] All request headers:', Object.keys(event.node.req.headers));
+    console.log('[Freelo Proxy] Looking for credentials in headers...');
+    
     // Nejdřív zkusit custom headers (nejspolehlivější)
     email = event.node.req.headers['x-freelo-email'] as string;
     apiKey = event.node.req.headers['x-freelo-api-key'] as string;
     
+    // Odstranit mezery na začátku a konci (trim)
+    if (email) email = email.trim();
+    if (apiKey) apiKey = apiKey.trim();
+    
+    console.log('[Freelo Proxy] Custom headers:', {
+      'x-freelo-email': email ? `${email.substring(0, 3)}***` : 'NOT FOUND',
+      'x-freelo-api-key': apiKey ? '***' : 'NOT FOUND',
+      'email-length': email?.length || 0,
+      'apiKey-length': apiKey?.length || 0
+    });
+    
     // Pak zkusit Authorization header (Basic Auth)
     if (!email || !apiKey) {
       const authHeader = event.node.req.headers.authorization;
+      console.log('[Freelo Proxy] Authorization header:', authHeader ? 'PRESENT (Basic ***)' : 'NOT FOUND');
+      
       if (authHeader && authHeader.startsWith('Basic ')) {
         const credentials = Buffer.from(authHeader.replace('Basic ', ''), 'base64').toString('utf-8');
         [email, apiKey] = credentials.split(':');
+        // Trim také pro credentials z Basic Auth
+        if (email) email = email.trim();
+        if (apiKey) apiKey = apiKey.trim();
+        console.log('[Freelo Proxy] Extracted from Basic Auth:', {
+          email: email ? `${email.substring(0, 3)}***` : 'NOT FOUND',
+          apiKey: apiKey ? '***' : 'NOT FOUND',
+          'email-length': email?.length || 0,
+          'apiKey-length': apiKey?.length || 0
+        });
       }
     }
     
@@ -267,20 +293,54 @@ export default defineEventHandler(async (event) => {
       }
     }
     
-    if (!email || !apiKey) {
+    // Validace: ujistit se, že email a apiKey nejsou prázdné po trim
+    if (!email || !apiKey || !email.trim() || !apiKey.trim()) {
+      console.error('[Freelo Proxy] ❌ Missing or empty credentials!');
+      console.error('[Freelo Proxy] Email:', email ? `${email.substring(0, 3)}*** (length: ${email.length})` : 'NOT FOUND');
+      console.error('[Freelo Proxy] API Key:', apiKey ? `*** (length: ${apiKey.length})` : 'NOT FOUND');
+      console.error('[Freelo Proxy] All headers keys:', Object.keys(event.node.req.headers));
+      console.error('[Freelo Proxy] Authorization header:', event.node.req.headers.authorization ? 'PRESENT' : 'NOT FOUND');
       event.node.res.statusCode = 401;
       return {
-        error: 'Missing credentials. Please provide email and API key.',
+        error: 'Missing or empty credentials. Please provide email and API key.',
       };
     }
+    
+    // Ujistit se, že jsou credentials otrimované
+    email = email.trim();
+    apiKey = apiKey.trim();
+    
+    console.log('[Freelo Proxy] ✅ Credentials found:', {
+      email: `${email.substring(0, 3)}***`,
+      emailLength: email.length,
+      apiKeyLength: apiKey.length
+    });
 
     // Sestavení URL s query parametry
     const queryString = new URLSearchParams(query as Record<string, string>).toString();
     const url = `${FREELO_API_BASE}/${path}${queryString ? `?${queryString}` : ''}`;
     
     // Vytvoření Basic Auth headeru
-    const credentialsString = `${email}:${apiKey}`;
+    // Ujistit se, že email a apiKey nemají mezery
+    const cleanEmail = email.trim();
+    const cleanApiKey = apiKey.trim();
+    const credentialsString = `${cleanEmail}:${cleanApiKey}`;
     const authHeaderValue = `Basic ${Buffer.from(credentialsString).toString('base64')}`;
+    
+    // Debug: logovat informace o credentials (bez zobrazení citlivých dat)
+    console.log('[Freelo Proxy] Preparing Freelo API request:', {
+      email: `${cleanEmail.substring(0, 3)}***`,
+      emailLength: cleanEmail.length,
+      apiKeyLength: cleanApiKey.length,
+      credentialsStringLength: credentialsString.length,
+      authHeaderLength: authHeaderValue.length,
+      url: `${FREELO_API_BASE}/${path}${queryString ? `?${queryString}` : ''}`,
+      // Debug: zkontrolovat, jestli credentials neobsahují neobvyklé znaky
+      emailHasSpaces: cleanEmail.includes(' '),
+      apiKeyHasSpaces: cleanApiKey.includes(' '),
+      emailHasNewlines: cleanEmail.includes('\n') || cleanEmail.includes('\r'),
+      apiKeyHasNewlines: cleanApiKey.includes('\n') || cleanApiKey.includes('\r')
+    });
     
     // User-Agent header je povinný podle dokumentace
     const userAgent = 'Scrum Board (server-proxy)';
@@ -329,12 +389,24 @@ export default defineEventHandler(async (event) => {
         method: method as any,
         url,
         headers: {
-          'User-Agent': `${userAgent} (${email})`,
+          'User-Agent': `${userAgent} (${cleanEmail})`,
           'Authorization': authHeaderValue,
           'Content-Type': 'application/json',
         },
         validateStatus: () => true, // Nevyhodit chybu pro non-2xx status kódy
       };
+      
+      // Debug: logovat, co se posílá na Freelo API (bez citlivých dat)
+      console.log('[Freelo Proxy] Sending request to Freelo API:', {
+        method,
+        url,
+        headers: {
+          'User-Agent': `${userAgent} (${cleanEmail.substring(0, 3)}***)`,
+          'Authorization': 'Basic ***',
+          'Content-Type': 'application/json',
+        },
+        hasBody: !!freeloRequestBody
+      });
       
       if (freeloRequestBody) {
         axiosConfig.data = freeloRequestBody;
@@ -354,7 +426,16 @@ export default defineEventHandler(async (event) => {
           path,
           isUpdateTask,
           requestBody: process.env.NODE_ENV === 'development' ? freeloRequestBody : undefined,
-          responseData: response.data
+          responseData: response.data,
+          // Debug: zkontrolovat, jestli credentials nejsou prázdné nebo neplatné
+          credentialsInfo: {
+            emailLength: cleanEmail.length,
+            apiKeyLength: cleanApiKey.length,
+            emailPreview: `${cleanEmail.substring(0, 3)}***`,
+            // Zkontrolovat, jestli credentials neobsahují neobvyklé znaky
+            emailHasSpecialChars: /[^\w@.-]/.test(cleanEmail),
+            apiKeyHasSpecialChars: /[^\w-]/.test(cleanApiKey)
+          }
         });
         
         return {

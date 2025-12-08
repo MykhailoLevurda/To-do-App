@@ -8,7 +8,7 @@ const dashboardKey = ref('initial');
 // Použijeme přímo auth.isAuthenticated pro lepší reaktivitu
 
 watch(() => auth.user.value?.email, (newEmail) => {
-  console.log('[Index Page] User email changed:', newEmail);
+  console.log('[Index Page] User email changed:', newEmail ?? '(no user)');
   dashboardKey.value = newEmail || `no-user-${Date.now()}`;
 }, { immediate: true });
 
@@ -40,7 +40,7 @@ onMounted(() => {
   
   // Zkontrolovat, zda je uživatel přihlášen
   if (auth.isAuthenticated) {
-    console.log('[Index Page] User is authenticated:', auth.user.value?.email);
+    console.log('[Index Page] User is authenticated:', auth.user.value?.email ?? '(no email)');
   } else {
     console.log('[Index Page] User is not authenticated');
   }
