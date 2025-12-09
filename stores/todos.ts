@@ -6,13 +6,14 @@ export interface TaskItem {
   description?: string;
   status: 'todo' | 'in-progress' | 'done';
   priority: 'low' | 'medium' | 'high';
-  assignee?: string;
+  assignee?: string; // Jméno řešitele (pro zobrazení)
   storyPoints?: number;
   projectId: string;
   dueDate?: Date;
   createdAt: Date;
   updatedAt: Date;
   approved?: boolean; // Pro schválení dokončených úkolů
+  freeloWorkerId?: number; // Freelo worker ID (pro editaci a synchronizaci)
 }
 
 export interface ScrumBoardState {

@@ -342,6 +342,45 @@ export const useFreeloProjects = () => {
   };
 
   /**
+   * Načte členy týmu projektu (workers) z Freelo API
+   * @param projectId - ID projektu (může být string "freelo-123" nebo number)
+   */
+  const fetchProjectWorkers = async (projectId: number | string): Promise<Array<{ id: number; fullname: string }>> => {
+    try {
+      // Extrahovat čisté ID z formátu "freelo-123"
+      const cleanProjectId = typeof projectId === 'string' && projectId.startsWith('freelo-')
+        ? parseInt(projectId.replace('freelo-', ''))
+        : projectId;
+
+      console.log('[Freelo Projects] Fetching workers for project:', cleanProjectId);
+      
+      // Freelo API endpoint pro načtení workers: GET /project/{id}/workers
+      const response = await freeloFetch<any>(`/project/${cleanProjectId}/workers`);
+      
+      console.log('[Freelo Projects] Workers response:', response);
+      
+      // Freelo API může vracet buď přímo pole, nebo objekt s workers/data.workers
+      if (Array.isArray(response)) {
+        return response;
+      }
+      
+      if (response && response.workers && Array.isArray(response.workers)) {
+        return response.workers;
+      }
+      
+      if (response && response.data && response.data.workers && Array.isArray(response.data.workers)) {
+        return response.data.workers;
+      }
+      
+      console.warn('[Freelo Projects] Unexpected workers response structure');
+      return [];
+    } catch (error: any) {
+      console.error('[Freelo Projects] Error fetching project workers:', error);
+      throw error;
+    }
+  };
+
+  /**
    * Generuje barvu z ID (pro konzistentní zobrazení)
    */
   const generateColorFromId = (id: number): string => {
@@ -684,6 +723,7 @@ export const useFreeloProjects = () => {
     fetchInvitedProjects,
     fetchArchivedProjects,
     fetchProjectById,
+    fetchProjectWorkers,
     syncProjects,
     createProject,
     updateProject,

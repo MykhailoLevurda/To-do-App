@@ -225,9 +225,22 @@
             </UFormGroup>
 
             <UFormGroup label="Řešitel">
-              <UInput v-model="editingTask.assignee" />
-              <p v-if="currentUserDisplayName" class="text-xs text-gray-500 mt-1">
-                Aktuálně přihlášen: {{ currentUserDisplayName }}
+              <USelect
+                v-model="editingTask.assignee"
+                :options="workerOptions"
+                :loading="isLoadingWorkers"
+                placeholder="Vyberte řešitele"
+                :disabled="isLoadingWorkers || workerOptions.length === 0"
+              >
+                <template v-if="workerOptions.length === 0 && !isLoadingWorkers">
+                  <option value="">Žádní členové týmu</option>
+                </template>
+              </USelect>
+              <p v-if="isLoadingWorkers" class="text-xs text-gray-500 mt-1">
+                Načítám členy týmu...
+              </p>
+              <p v-else-if="workerOptions.length === 0" class="text-xs text-gray-500 mt-1">
+                Projekt nemá žádné členy týmu
               </p>
             </UFormGroup>
           </div>
@@ -284,6 +297,11 @@ const tasksByStatus = (status: 'todo' | 'in-progress' | 'done') => {
 const showAddTaskModal = ref(false);
 const showEditTaskModal = ref(false);
 const editingTask = ref<TaskItem | null>(null);
+const originalTask = ref<TaskItem | null>(null);
+
+// Project workers (for assignee dropdown)
+const projectWorkers = ref<Array<{ id: number; fullname: string }>>([]);
+const isLoadingWorkers = ref(false);
 
 // Form data
 const newTask = ref({
@@ -413,9 +431,36 @@ async function addTask() {
   }
 }
 
-const originalTask = ref<TaskItem | null>(null);
+// Load project workers
+const loadProjectWorkers = async () => {
+  const freeloProjectId = getFreeloProjectId(props.projectId);
+  if (!freeloProjectId) {
+    console.warn('[ScrumBoard] Cannot load workers - invalid project ID');
+    return;
+  }
+  
+  isLoadingWorkers.value = true;
+  try {
+    const workers = await freeloProjects.fetchProjectWorkers(freeloProjectId);
+    projectWorkers.value = workers;
+    console.log('[ScrumBoard] Loaded', workers.length, 'workers for project');
+  } catch (error: any) {
+    console.error('[ScrumBoard] Error loading project workers:', error);
+    projectWorkers.value = [];
+  } finally {
+    isLoadingWorkers.value = false;
+  }
+};
 
-function editTask(task: TaskItem) {
+// Worker options for select
+const workerOptions = computed(() => {
+  return projectWorkers.value.map(worker => ({
+    label: worker.fullname,
+    value: worker.id.toString()
+  }));
+});
+
+async function editTask(task: TaskItem) {
   // Uložit původní úkol pro porovnání změn
   originalTask.value = { ...task };
   
@@ -425,7 +470,37 @@ function editTask(task: TaskItem) {
     const date = new Date(task.dueDate);
     taskCopy.dueDate = date.toISOString().split('T')[0];
   }
+  
   editingTask.value = taskCopy;
+  
+  // Načíst workers při otevření modalu
+  await loadProjectWorkers();
+  
+  // Po načtení workers nastavit správný worker ID do assignee pro select
+  // Použít freeloWorkerId pokud existuje, jinak najít podle jména
+  if (projectWorkers.value.length > 0) {
+    let worker = null;
+    
+    // Nejdřív zkusit najít podle freeloWorkerId
+    if (task.freeloWorkerId) {
+      worker = projectWorkers.value.find(w => w.id === task.freeloWorkerId);
+    }
+    
+    // Pokud ne, zkusit najít podle jména v assignee
+    if (!worker && taskCopy.assignee) {
+      worker = projectWorkers.value.find(w => 
+        w.fullname === taskCopy.assignee || 
+        w.id.toString() === taskCopy.assignee
+      );
+    }
+    
+    if (worker) {
+      // Nastavit worker ID do assignee pro select (pouze pro editaci)
+      taskCopy.assignee = worker.id.toString();
+      editingTask.value = taskCopy;
+    }
+  }
+  
   showEditTaskModal.value = true;
 }
 
@@ -478,6 +553,36 @@ async function updateTask() {
       hasChanges = true;
     }
     
+    // Řešitel (worker) - převést z string ID na number
+    // Porovnat buď worker ID (pokud je to číslo) nebo jméno
+    const originalAssignee = originalTask.value.assignee || '';
+    const newAssignee = editingTask.value.assignee || '';
+    
+    // Porovnat worker ID - pokud se změnil worker v selectu (ID), nebo se změnilo jméno
+    const originalWorkerId = originalTask.value.freeloWorkerId;
+    let newWorkerId: number | null = null;
+    
+    if (newAssignee) {
+      // Zkusit parsovat jako worker ID (číslo)
+      const workerId = parseInt(newAssignee);
+      if (!isNaN(workerId) && workerId > 0) {
+        // Je to worker ID z selectu
+        newWorkerId = workerId;
+      } else {
+        // Pokud je to jméno, zkusit najít worker podle jména
+        const worker = projectWorkers.value.find(w => w.fullname === newAssignee);
+        if (worker) {
+          newWorkerId = worker.id;
+        }
+      }
+    }
+    
+    // Zkontrolovat, jestli se worker změnil
+    if (newWorkerId !== originalWorkerId) {
+      freeloUpdates.worker = newWorkerId;
+      hasChanges = true;
+    }
+    
     // Pokud nejsou žádné změny, jen zavřít modal
     if (!hasChanges) {
       console.log('[ScrumBoard] No changes detected, skipping API call');
@@ -489,17 +594,29 @@ async function updateTask() {
     
     console.log('[ScrumBoard] Changes detected:', freeloUpdates);
     
-    // TODO: Převést assignee (řešitel) na worker ID - vyžaduje načtení seznamu uživatelů z Freelo
-    
     // Aktualizovat úkol přes Freelo API (pouze pokud jsou změny)
     await freeloTasks.updateTask(taskId, freeloUpdates);
     
     // Aktualizovat lokální stav
+    // Najít worker podle ID a uložit jeho jméno do assignee
+    let assigneeName = editingTask.value.assignee;
+    let workerId: number | undefined = undefined;
+    
+    const selectedWorkerId = parseInt(editingTask.value.assignee || '');
+    if (!isNaN(selectedWorkerId) && selectedWorkerId > 0) {
+      const worker = projectWorkers.value.find(w => w.id === selectedWorkerId);
+      if (worker) {
+        assigneeName = worker.fullname;
+        workerId = worker.id;
+      }
+    }
+    
     scrumBoard.updateTask(taskId, {
       title: editingTask.value.title,
       description: editingTask.value.description,
       priority: editingTask.value.priority,
-      assignee: editingTask.value.assignee,
+      assignee: assigneeName, // Uložit jméno pro zobrazení
+      freeloWorkerId: workerId, // Uložit worker ID pro další editaci
       dueDate: editingTask.value.dueDate ? (typeof editingTask.value.dueDate === 'string' ? new Date(editingTask.value.dueDate) : editingTask.value.dueDate) : undefined,
     });
     

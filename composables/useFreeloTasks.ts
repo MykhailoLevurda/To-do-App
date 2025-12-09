@@ -242,8 +242,20 @@ export const useFreeloTasks = () => {
       priority = 'low';
     }
 
-    // Získat jméno přiřazeného uživatele
+    // Získat jméno přiřazeného uživatele (pro zobrazení)
+    // Vždy ukládat jméno do assignee, ne ID (pro lepší UX)
     const assignee = freeloTask.worker?.fullname || freeloTask.worker?.email || undefined;
+    
+    // Debug: logovat worker informace
+    if (freeloTask.worker) {
+      console.log('[Freelo Tasks] Task', freeloTask.id, 'has worker:', {
+        id: freeloTask.worker.id,
+        fullname: freeloTask.worker.fullname,
+        email: freeloTask.worker.email
+      });
+    } else {
+      console.log('[Freelo Tasks] Task', freeloTask.id, 'has no worker assigned');
+    }
 
     // Dokončené úkoly z Freelo jsou automaticky schválené
     // (pokud je úkol dokončený ve Freelo, považujeme ho za schválený)
@@ -255,6 +267,7 @@ export const useFreeloTasks = () => {
       description: '', // Freelo API neposkytuje description v základním endpointu
       status: appStatus,
       priority: priority,
+      // Uložit jméno do assignee (pro zobrazení)
       assignee: assignee,
       storyPoints: undefined, // Freelo API neposkytuje story points
       projectId: `freelo-${freeloTask.project.id}`,
@@ -262,6 +275,8 @@ export const useFreeloTasks = () => {
       createdAt: new Date(freeloTask.date_add),
       updatedAt: new Date(freeloTask.date_edited_at),
       approved: approved, // Dokončené úkoly z Freelo jsou automaticky schválené
+      // Uložit worker ID do extra pole pro použití při editaci
+      freeloWorkerId: freeloTask.worker?.id,
     };
   };
 
@@ -281,33 +296,42 @@ export const useFreeloTasks = () => {
       
       const freeloTasks = await fetchTasksByProject(cleanProjectId, workerId);
       
-      // DŮLEŽITÉ: Zkontrolovat, jestli úkoly mají labely
+      // DŮLEŽITÉ: Zkontrolovat, jestli úkoly mají labely a worker informace
       // Endpoint /all-tasks by měl vracet labely, ale někdy je nevrací
-      // Pokud ne, načíst detail každého úkolu zvlášť (endpoint /task/{id} vrací labely jistě)
+      // Worker informace také nemusí být vždy kompletní
+      // Pokud ne, načíst detail každého úkolu zvlášť (endpoint /task/{id} vrací labely a worker jistě)
       const tasksWithoutLabels = freeloTasks.filter(t => !t.labels || t.labels.length === 0);
+      const tasksWithoutWorker = freeloTasks.filter(t => !t.worker || !t.worker.id);
       const tasksWithLabels = freeloTasks.filter(t => t.labels && t.labels.length > 0);
       
       console.log('[Freelo Tasks] Tasks with labels from /all-tasks:', tasksWithLabels.length);
       console.log('[Freelo Tasks] Tasks without labels from /all-tasks:', tasksWithoutLabels.length);
+      console.log('[Freelo Tasks] Tasks without worker from /all-tasks:', tasksWithoutWorker.length);
       
-      // Pokud některé úkoly nemají labely, načíst jejich detail zvlášť
-      // Toto je důležité pro správné mapování stavů (in-progress vs todo)
-      if (tasksWithoutLabels.length > 0) {
-        console.log('[Freelo Tasks] ⚠️ Some tasks are missing labels from /all-tasks endpoint');
-        console.log('[Freelo Tasks] Fetching details for', tasksWithoutLabels.length, 'tasks to get labels...');
-        console.log('[Freelo Tasks] This might be slow, but ensures correct status mapping');
+      // Pokud některé úkoly nemají labely nebo worker, načíst jejich detail zvlášť
+      // Toto je důležité pro správné mapování stavů (in-progress vs todo) a zobrazení řešitele
+      const tasksNeedingDetail = freeloTasks.filter(t => 
+        (!t.labels || t.labels.length === 0) || (!t.worker || !t.worker.id)
+      );
+      
+      if (tasksNeedingDetail.length > 0) {
+        console.log('[Freelo Tasks] ⚠️ Some tasks are missing labels or worker info from /all-tasks endpoint');
+        console.log('[Freelo Tasks] Fetching details for', tasksNeedingDetail.length, 'tasks to get labels and worker info...');
+        console.log('[Freelo Tasks] This might be slow, but ensures correct status mapping and assignee display');
         
-        // Načíst detail pro úkoly bez labelů
+        // Načíst detail pro úkoly bez labelů nebo worker informací
         // Použít Promise.allSettled místo Promise.all, aby se nepřerušilo načítání při chybě jednoho úkolu
         const detailResults = await Promise.allSettled(
-          tasksWithoutLabels.map(async (task) => {
+          tasksNeedingDetail.map(async (task) => {
             try {
               const detail = await fetchTaskDetail(task.id);
               if (detail) {
-                // Aktualizovat labely z detailu
+                // Aktualizovat labely a worker informace z detailu
+                // Worker z detailu má přednost, protože je kompletnější
                 return {
                   ...task,
-                  labels: detail.labels || task.labels || []
+                  labels: detail.labels || task.labels || [],
+                  worker: detail.worker || task.worker // Aktualizovat worker informace z detailu (má přednost)
                 };
               }
               return task;
@@ -323,14 +347,19 @@ export const useFreeloTasks = () => {
           if (result.status === 'fulfilled') {
             return result.value;
           } else {
-            console.warn('[Freelo Tasks] Failed to fetch detail for task:', tasksWithoutLabels[index].id);
-            return tasksWithoutLabels[index];
+            console.warn('[Freelo Tasks] Failed to fetch detail for task:', tasksNeedingDetail[index].id);
+            return tasksNeedingDetail[index];
           }
         });
         
-        // Nahradit úkoly bez labelů úkoly s detailem a odstranit duplikáty
+        // Nahradit úkoly bez labelů/worker úkoly s detailem a odstranit duplikáty
+        // Úkoly, které mají labely i worker, ponechat beze změny
+        const tasksNotNeedingDetail = freeloTasks.filter(t => 
+          t.labels && t.labels.length > 0 && t.worker && t.worker.id
+        );
+        
         const allTasks = [
-          ...tasksWithLabels,
+          ...tasksNotNeedingDetail,
           ...tasksWithDetails
         ];
         
