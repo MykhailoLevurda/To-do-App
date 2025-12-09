@@ -248,6 +248,7 @@ const projectsStore = useProjectsStore();
 const freeloProjects = useFreeloProjects();
 const auth = useFreeloAuth();
 const router = useRouter();
+const route = useRoute();
 
 // Modal states
 const showAddProjectModal = ref(false);
@@ -439,15 +440,108 @@ function openProject(project: Project) {
 }
 
 async function archiveProject(projectId: string) {
-  alert('Archivace projektů je dostupná pouze v Freelo aplikaci.');
+  const project = projectsStore.getProjectById(projectId);
+  if (!project) return;
+  
+  // Zkontrolovat, jestli je to Freelo projekt
+  const freeloId = (project as any).freeloId;
+  const match = project.id.match(/^freelo-(\d+)$/);
+  const cleanFreeloId = freeloId || (match ? parseInt(match[1]) : null);
+  
+  if (!cleanFreeloId) {
+    alert('Tento projekt není z Freelo, archivace není podporována.');
+    return;
+  }
+  
+  if (!confirm(`Opravdu chcete archivovat projekt "${project.name}"?`)) {
+    return;
+  }
+  
+  try {
+    await freeloProjects.archiveProject(cleanFreeloId);
+    alert(`Projekt "${project.name}" byl úspěšně archivován.`);
+  } catch (error: any) {
+    console.error('[Dashboard] Error archiving project:', error);
+    alert('Chyba při archivaci projektu: ' + (error.message || 'Neznámá chyba'));
+  }
 }
 
 async function unarchiveProject(projectId: string) {
-  alert('Zrušení archivace projektů je dostupné pouze v Freelo aplikaci.');
+  const project = projectsStore.getProjectById(projectId);
+  if (!project) return;
+  
+  // Zkontrolovat, jestli je to Freelo projekt
+  const freeloId = (project as any).freeloId;
+  const match = project.id.match(/^freelo-(\d+)$/);
+  const cleanFreeloId = freeloId || (match ? parseInt(match[1]) : null);
+  
+  if (!cleanFreeloId) {
+    alert('Tento projekt není z Freelo, zrušení archivace není podporováno.');
+    return;
+  }
+  
+  if (!confirm(`Opravdu chcete obnovit projekt "${project.name}"?`)) {
+    return;
+  }
+  
+  try {
+    await freeloProjects.activateProject(cleanFreeloId);
+    alert(`Projekt "${project.name}" byl úspěšně obnoven.`);
+  } catch (error: any) {
+    console.error('[Dashboard] Error unarchiving project:', error);
+    alert('Chyba při obnovení projektu: ' + (error.message || 'Neznámá chyba'));
+  }
 }
 
 async function deleteProject(projectId: string) {
-  alert('Mazání projektů je dostupné pouze v Freelo aplikaci.');
+  const project = projectsStore.getProjectById(projectId);
+  if (!project) return;
+  
+  // Zkontrolovat, jestli je to Freelo projekt
+  const freeloId = (project as any).freeloId;
+  const match = project.id.match(/^freelo-(\d+)$/);
+  const cleanFreeloId = freeloId || (match ? parseInt(match[1]) : null);
+  
+  if (!cleanFreeloId) {
+    alert('Tento projekt není z Freelo, mazání není podporováno.');
+    return;
+  }
+  
+  if (!confirm(`Opravdu chcete smazat projekt "${project.name}"? Tato akce je nevratná.`)) {
+    return;
+  }
+  
+  try {
+    // Použít projectId (string formát "freelo-123") pro okamžité odstranění ze store
+    await freeloProjects.deleteProject(projectId);
+    
+    // Projekt je už odstraněn ze store v deleteProject funkci
+    // Pokud je to aktuální projekt, přesměrovat na dashboard
+    if (projectsStore.currentProject?.id === projectId) {
+      projectsStore.setCurrentProject(null);
+      // Pokud jsme na stránce projektu, přesměrovat na dashboard
+      if (route.path.startsWith('/projects/')) {
+        router.push('/');
+      }
+    }
+    
+    // Zobrazit úspěšnou zprávu (projekt už není v seznamu, takže UI se aktualizovalo)
+    const toast = useToast();
+    toast.add({
+      title: 'Projekt byl úspěšně smazán',
+      color: 'green'
+    });
+  } catch (error: any) {
+    console.error('[Dashboard] Error deleting project:', error);
+    const errorMessage = error.message || 'Neznámá chyba';
+    
+    // Zkontrolovat, jestli chyba říká, že mazání není podporováno
+    if (errorMessage.includes('dostupné pouze') || errorMessage.includes('not supported') || errorMessage.includes('not available')) {
+      alert('Mazání projektů je dostupné pouze přímo ve Freelo aplikaci. Prosím smažte projekt na https://app.freelo.io');
+    } else {
+      alert('Chyba při mazání projektu: ' + errorMessage);
+    }
+  }
 }
 
 // Lifecycle

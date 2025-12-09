@@ -18,6 +18,10 @@ const currentProject = computed(() => {
 const freeloProjectDetail = ref<any>(null);
 const isLoadingFreeloDetail = ref(false);
 
+// Delete modal
+const showDeleteModal = ref(false);
+const isDeleting = ref(false);
+
 // Load Freelo project detail if project has freeloId
 const loadFreeloProjectDetail = async () => {
   const project = currentProject.value;
@@ -64,6 +68,94 @@ watch(currentProject, (project) => {
     loadFreeloProjectDetail();
   }
 }, { immediate: true });
+
+// Get Freelo project ID
+const getFreeloProjectId = (): number | null => {
+  const project = currentProject.value;
+  if (!project) return null;
+  
+  const freeloId = (project as any).freeloId;
+  if (freeloId) return freeloId;
+  
+  // Zkusit extrahovat z ID (formát: freelo-123)
+  const match = project.id.match(/^freelo-(\d+)$/);
+  if (match) {
+    return parseInt(match[1]);
+  }
+  
+  return null;
+};
+
+// Open edit modal
+const openEditModal = () => {
+  // Freelo API nepodporuje úpravu projektů přes API
+  // Zobrazit hlášku hned při kliknutí
+  const toast = useToast();
+  toast.add({
+    title: 'Úprava projektů není podporována',
+    description: 'Úprava projektů je dostupná pouze přímo ve Freelo aplikaci. Prosím upravte projekt na https://app.freelo.io',
+    color: 'yellow',
+    timeout: 5000
+  });
+};
+
+// Open delete modal
+const openDeleteModal = () => {
+  showDeleteModal.value = true;
+};
+
+// Delete project
+const deleteProject = async () => {
+  const freeloId = getFreeloProjectId();
+  if (!freeloId || !currentProject.value) return;
+  
+  const projectIdString = currentProject.value.id; // Formát "freelo-123"
+  
+  isDeleting.value = true;
+  try {
+    // Použít projectIdString pro okamžité odstranění ze store
+    await freeloProjects.deleteProject(projectIdString);
+    
+    // Zavřít modal
+    showDeleteModal.value = false;
+    
+    // Zobrazit notifikaci
+    const toast = useToast();
+    toast.add({
+      title: 'Projekt byl úspěšně smazán',
+      color: 'green'
+    });
+    
+    // Přesměrovat na dashboard (projekt už je odstraněn ze store)
+    router.push('/');
+  } catch (error: any) {
+    console.error('[Project Page] Error deleting project:', error);
+    
+    // Zavřít modal
+    showDeleteModal.value = false;
+    
+    // Zkontrolovat, jestli chyba říká, že mazání není podporováno
+    const errorMessage = error.message || '';
+    if (errorMessage.includes('dostupné pouze') || errorMessage.includes('not supported') || errorMessage.includes('not available')) {
+      const toast = useToast();
+      toast.add({
+        title: 'Mazání projektů není podporováno',
+        description: 'Mazání projektů je dostupné pouze přímo ve Freelo aplikaci. Prosím smažte projekt na https://app.freelo.io',
+        color: 'yellow',
+        timeout: 5000
+      });
+    } else {
+      const toast = useToast();
+      toast.add({
+        title: 'Chyba při mazání projektu',
+        description: errorMessage || 'Nepodařilo se smazat projekt. Prosím zkuste to přímo ve Freelo aplikaci.',
+        color: 'red'
+      });
+    }
+  } finally {
+    isDeleting.value = false;
+  }
+};
 </script>
 
 <template>
@@ -91,10 +183,29 @@ watch(currentProject, (project) => {
             {{ currentProject.description }}
           </p>
         </div>
-        <div v-if="freeloProjectDetail" class="text-right">
-          <UBadge color="blue" variant="soft">
-            Freelo Project ID: {{ freeloProjectDetail.id }}
-          </UBadge>
+        <div class="flex items-center gap-2">
+          <div v-if="freeloProjectDetail" class="text-right">
+            <UBadge color="blue" variant="soft">
+              Freelo Project ID: {{ freeloProjectDetail.id }}
+            </UBadge>
+          </div>
+          <UButton
+            icon="i-heroicons-pencil"
+            variant="outline"
+            @click="openEditModal"
+            :disabled="!getFreeloProjectId()"
+          >
+            Upravit
+          </UButton>
+          <UButton
+            icon="i-heroicons-trash"
+            variant="outline"
+            color="red"
+            @click="openDeleteModal"
+            :disabled="!getFreeloProjectId()"
+          >
+            Smazat
+          </UButton>
         </div>
       </div>
     </div>
@@ -163,5 +274,43 @@ watch(currentProject, (project) => {
       <p class="text-gray-500">Načítám projekt...</p>
     </div>
   </div>
+
+
+  <!-- Delete Project Modal -->
+  <UModal v-model="showDeleteModal">
+    <UCard>
+      <template #header>
+        <h3 class="text-lg font-semibold text-red-600">Smazat projekt</h3>
+      </template>
+
+      <div class="space-y-4">
+        <p class="text-gray-700">
+          Opravdu chcete smazat projekt <strong>{{ currentProject?.name }}</strong>?
+        </p>
+        <p class="text-sm text-gray-500">
+          Tato akce je nevratná. Projekt bude smazán i ve Freelo.
+        </p>
+      </div>
+
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton 
+            variant="ghost" 
+            @click="showDeleteModal = false"
+            :disabled="isDeleting"
+          >
+            Zrušit
+          </UButton>
+          <UButton 
+            color="red"
+            @click="deleteProject"
+            :loading="isDeleting"
+          >
+            Smazat projekt
+          </UButton>
+        </div>
+      </template>
+    </UCard>
+  </UModal>
 </template>
 

@@ -155,13 +155,13 @@ export const useFreeloProjects = () => {
         }
         
         // 4. Odstranit duplicity (podle ID) - použít Map pro lepší výkon
-        const projectsMap = new Map<number, FreeloProject>();
+        const freeloProjectsMap = new Map<number, FreeloProject>();
         for (const project of allProjects) {
-          if (project.id && !projectsMap.has(project.id)) {
-            projectsMap.set(project.id, project);
+          if (project.id && !freeloProjectsMap.has(project.id)) {
+            freeloProjectsMap.set(project.id, project);
           }
         }
-        const uniqueProjects = Array.from(projectsMap.values());
+        const uniqueProjects = Array.from(freeloProjectsMap.values());
         
         console.log('[Freelo Projects] Total unique projects:', uniqueProjects.length, '(own + invited, removed', allProjects.length - uniqueProjects.length, 'duplicates)');
       
@@ -214,25 +214,51 @@ export const useFreeloProjects = () => {
           };
         });
 
-        // 5. Odstranit duplicity v již načtených projektech (podle ID)
-        const existingProjectsMap = new Map<string, Project>();
-        for (const project of projectsStore.projects) {
-          existingProjectsMap.set(project.id, project);
+        // 5. Odstranit duplicity - použít Map s ID jako klíčem
+        // Vytvořit Map z nově načtených projektů (mají přednost, protože jsou aktuálnější)
+        const projectsMap = new Map<string, Project>();
+        
+        // Nejdřív přidat nově načtené projekty z Freelo API
+        // Tyto projekty mají přednost, protože jsou aktuálnější
+        for (const project of projects) {
+          projectsMap.set(project.id, project);
         }
         
-        // Přidat nové projekty, ale nepřidávat duplicity
-        for (const project of projects) {
-          if (!existingProjectsMap.has(project.id)) {
-            existingProjectsMap.set(project.id, project);
+        // Pak přidat stávající projekty ze store, které nejsou Freelo projekty
+        // (pro případy, kdy projekt není z Freelo nebo ještě není synchronizován)
+        for (const existingProject of projectsStore.projects) {
+          // Přidat pouze pokud není Freelo projekt (nemá prefix "freelo-")
+          // Freelo projekty už jsou v projectsMap z předchozího kroku
+          if (!existingProject.id.startsWith('freelo-')) {
+            // Zkontrolovat, jestli už není v mapě (pro jistotu)
+            if (!projectsMap.has(existingProject.id)) {
+              projectsMap.set(existingProject.id, existingProject);
+            }
           }
         }
         
         // Nastavit všechny projekty (bez duplikátů)
-        const finalProjects = Array.from(existingProjectsMap.values());
-        projectsStore.setProjects(finalProjects);
+        const finalProjects = Array.from(projectsMap.values());
+        
+        // Debug: zkontrolovat duplicity před uložením
+        const duplicateIds = finalProjects.filter((p, index, arr) => 
+          arr.findIndex(proj => proj.id === p.id) !== index
+        ).map(p => p.id);
+        
+        if (duplicateIds.length > 0) {
+          console.warn('[Freelo Projects] ⚠️ Found duplicates before saving:', duplicateIds);
+          // Odstranit duplicity (zachovat první výskyt)
+          const uniqueProjects = finalProjects.filter((p, index, arr) => 
+            arr.findIndex(proj => proj.id === p.id) === index
+          );
+          projectsStore.setProjects(uniqueProjects);
+          console.log('[Freelo Projects] Removed', duplicateIds.length, 'duplicates, saved', uniqueProjects.length, 'unique projects');
+        } else {
+          projectsStore.setProjects(finalProjects);
+        }
         projectsStore.setLoading(false);
         
-        console.log('[Freelo Projects] Synced', finalProjects.length, 'projects (removed', projects.length - finalProjects.length, 'duplicates from store)');
+        console.log('[Freelo Projects] Synced', finalProjects.length, 'projects');
         
         return finalProjects;
       } catch (error: any) {
@@ -468,6 +494,190 @@ export const useFreeloProjects = () => {
     }
   };
 
+  /**
+   * Aktualizuje projekt ve Freelo
+   * POZNÁMKA: Freelo API nepodporuje úpravu projektů přes API endpoint.
+   * Tato funkce vždy vyhodí chybu s informací, že úprava není podporována.
+   * @param projectId - ID projektu (může být string "freelo-123" nebo number)
+   * @param updates - Objekt s aktualizacemi (name, currency_iso, project_owner_id)
+   */
+  const updateProject = async (
+    projectId: number | string,
+    updates: {
+      name?: string;
+      currency_iso?: string;
+      project_owner_id?: number;
+    }
+  ): Promise<FreeloProject | null> => {
+    // Freelo API nepodporuje úpravu projektů přes API
+    // Podle dokumentace (freelo-apib.md) existuje pouze:
+    // - GET /project/{project_id} - získat projekt
+    // - DELETE /project/{project_id} - smazat projekt
+    // Není tam žádný PUT/PATCH endpoint pro úpravu
+    throw new Error('Úprava projektů není podporována přes Freelo API. Prosím upravte projekt přímo ve Freelo aplikaci.');
+  };
+
+  /**
+   * Smaže projekt ve Freelo
+   * POZNÁMKA: Freelo API může vracet chybu, že mazání projektů není podporováno přes API.
+   * V takovém případě tato funkce vyhodí chybu s informací pro uživatele.
+   * @param projectId - ID projektu (může být string "freelo-123" nebo number)
+   */
+  const deleteProject = async (projectId: number | string): Promise<void> => {
+    try {
+      // Extrahovat čisté ID z formátu "freelo-123"
+      const cleanProjectId = typeof projectId === 'string' && projectId.startsWith('freelo-')
+        ? parseInt(projectId.replace('freelo-', ''))
+        : projectId;
+
+      // Najít projekt v store podle ID (může být "freelo-123" nebo čisté ID)
+      const projectIdString = typeof projectId === 'string' 
+        ? projectId 
+        : `freelo-${projectId}`;
+      
+      console.log('[Freelo Projects] Deleting project:', cleanProjectId);
+      
+      // Freelo API endpoint pro smazání projektu: DELETE /project/{id}
+      try {
+        await freeloFetch<{ result: string }>(
+          `/project/${cleanProjectId}`,
+          {
+            method: 'DELETE'
+          }
+        );
+        
+        console.log('[Freelo Projects] Project deleted successfully');
+        
+        // OKAMŽITĚ odstranit projekt ze store před synchronizací (pro lepší UX)
+        projectsStore.removeProject(projectIdString);
+        
+        // Pokud je to aktuální projekt, vymazat ho
+        if (projectsStore.currentProject?.id === projectIdString) {
+          projectsStore.setCurrentProject(null);
+        }
+        
+        // Po smazání projektu načíst projekty znovu pro synchronizaci (na pozadí)
+        // Použít setTimeout, aby se UI aktualizovalo okamžitě
+        setTimeout(async () => {
+          try {
+            await syncProjects();
+          } catch (syncError) {
+            console.warn('[Freelo Projects] Error syncing after delete (non-critical):', syncError);
+          }
+        }, 100);
+      } catch (apiError: any) {
+        // Zkontrolovat, jestli API vrací chybu, že mazání není podporováno
+        const errorMessage = apiError.message || String(apiError) || '';
+        const errorData = apiError.data || apiError.response?.data || {};
+        
+        // Pokud API vrací chybu 403, 405, nebo specifickou hlášku, informovat uživatele
+        if (apiError.status === 403 || apiError.statusCode === 403 || 
+            apiError.status === 405 || apiError.statusCode === 405 ||
+            errorMessage.toLowerCase().includes('not allowed') ||
+            errorMessage.toLowerCase().includes('not supported') ||
+            errorMessage.toLowerCase().includes('dostupné pouze')) {
+          throw new Error('Mazání projektů je dostupné pouze přímo ve Freelo aplikaci. Prosím smažte projekt na https://app.freelo.io');
+        }
+        
+        // Jinak vyhodit původní chybu
+        throw apiError;
+      }
+    } catch (error: any) {
+      console.error('[Freelo Projects] Error deleting project:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Archivuje projekt ve Freelo
+   * @param projectId - ID projektu (může být string "freelo-123" nebo number)
+   */
+  const archiveProject = async (projectId: number | string): Promise<void> => {
+    try {
+      // Extrahovat čisté ID z formátu "freelo-123"
+      const cleanProjectId = typeof projectId === 'string' && projectId.startsWith('freelo-')
+        ? parseInt(projectId.replace('freelo-', ''))
+        : projectId;
+
+      // Najít projekt v store podle ID (může být "freelo-123" nebo čisté ID)
+      const projectIdString = typeof projectId === 'string' 
+        ? projectId 
+        : `freelo-${projectId}`;
+
+      console.log('[Freelo Projects] Archiving project:', cleanProjectId);
+      
+      // Freelo API endpoint pro archivaci projektu: POST /project/{id}/archive
+      await freeloFetch<{ result: string }>(
+        `/project/${cleanProjectId}/archive`,
+        {
+          method: 'POST'
+        }
+      );
+      
+      console.log('[Freelo Projects] Project archived successfully');
+      
+      // OKAMŽITĚ aktualizovat stav projektu v store (pro lepší UX)
+      projectsStore.updateProject(projectIdString, { status: 'archived' });
+      
+      // Po archivaci projektu načíst projekty znovu pro synchronizaci (na pozadí)
+      setTimeout(async () => {
+        try {
+          await syncProjects();
+        } catch (syncError) {
+          console.warn('[Freelo Projects] Error syncing after archive (non-critical):', syncError);
+        }
+      }, 100);
+    } catch (error: any) {
+      console.error('[Freelo Projects] Error archiving project:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Aktivuje (odarchivuje) projekt ve Freelo
+   * @param projectId - ID projektu (může být string "freelo-123" nebo number)
+   */
+  const activateProject = async (projectId: number | string): Promise<void> => {
+    try {
+      // Extrahovat čisté ID z formátu "freelo-123"
+      const cleanProjectId = typeof projectId === 'string' && projectId.startsWith('freelo-')
+        ? parseInt(projectId.replace('freelo-', ''))
+        : projectId;
+
+      // Najít projekt v store podle ID (může být "freelo-123" nebo čisté ID)
+      const projectIdString = typeof projectId === 'string' 
+        ? projectId 
+        : `freelo-${projectId}`;
+
+      console.log('[Freelo Projects] Activating project:', cleanProjectId);
+      
+      // Freelo API endpoint pro aktivaci projektu: POST /project/{id}/activate
+      await freeloFetch<{ result: string }>(
+        `/project/${cleanProjectId}/activate`,
+        {
+          method: 'POST'
+        }
+      );
+      
+      console.log('[Freelo Projects] Project activated successfully');
+      
+      // OKAMŽITĚ aktualizovat stav projektu v store (pro lepší UX)
+      projectsStore.updateProject(projectIdString, { status: 'active' });
+      
+      // Po aktivaci projektu načíst projekty znovu pro synchronizaci (na pozadí)
+      setTimeout(async () => {
+        try {
+          await syncProjects();
+        } catch (syncError) {
+          console.warn('[Freelo Projects] Error syncing after activate (non-critical):', syncError);
+        }
+      }, 100);
+    } catch (error: any) {
+      console.error('[Freelo Projects] Error activating project:', error);
+      throw error;
+    }
+  };
+
   return {
     fetchProjects,
     fetchAllProjects,
@@ -476,6 +686,10 @@ export const useFreeloProjects = () => {
     fetchProjectById,
     syncProjects,
     createProject,
+    updateProject,
+    deleteProject,
+    archiveProject,
+    activateProject,
   };
 };
 
