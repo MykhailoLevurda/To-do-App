@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import {
   FolderIcon,
   CalendarIcon,
@@ -8,7 +8,7 @@ import {
   PencilSquareIcon,
 } from '@heroicons/vue/24/outline'
 
-const auth = useFreeloAuth()
+const auth = useAuth()
 const projectsStore = useProjectsStore()
 const route = useRoute()
 const showAuthModal = ref(false)
@@ -58,7 +58,7 @@ const isProjectActive = (projectId: string) => {
       <div>
         <NuxtLink to="/" class="block mb-6">
           <h1 class="font-bold text-lg hover:text-primary transition-colors cursor-pointer">
-            Freelo Dashboard
+            Scrum Board
           </h1>
         </NuxtLink>
           <nav v-if="auth.user.value" class="flex flex-col gap-2">

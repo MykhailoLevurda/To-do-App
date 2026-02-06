@@ -7,16 +7,18 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null 
-        && (resource.data.createdBy == request.auth.uid 
+      allow update, delete: if request.auth != null
+        && (resource.data.createdBy == request.auth.uid
             || request.auth.token.admin == true);
+      // Subcollection: komentáře k úkolu – čtení a zápis pro přihlášené
+      match /comments/{commentId} {
+        allow read, write: if request.auth != null;
+      }
     }
     
-    // Users collection
-    // Používáme Freelo autentizaci (email + API klíč), ne Firebase Auth
-    // Proto povolujeme zápis bez request.auth pro ukládání credentials
+    // Users collection - Firebase Auth users, each user can read/write own document
     match /users/{userId} {
-      allow read, write: if true; // Povolit všechny operace (pro ukládání credentials)
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
     // Boards collection
@@ -27,12 +29,12 @@ service cloud.firestore {
         && resource.data.members[request.auth.uid] != null;
     }
     
-    // Projects collection
+    // Projects collection - createdBy is Firebase Auth uid
     match /projects/{projectId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null 
-        && (resource.data.createdBy == request.auth.uid 
+      allow update, delete: if request.auth != null
+        && (resource.data.createdBy == request.auth.uid
             || request.auth.token.admin == true);
     }
     

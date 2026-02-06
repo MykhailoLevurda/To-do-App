@@ -1,6 +1,15 @@
 <template>
   <div class="scrum-board">
-    <!-- Header with stats -->
+    <!-- Panel detailu úkolu zleva (Freelo styl) -->
+    <TaskDetailPanel
+      :task="selectedTask"
+      :is-open="!!selectedTask"
+      @close="selectedTask = null"
+      @edit="editTask"
+      @delete="deleteTask"
+      @move="moveTask"
+    />
+
     <div class="mb-6">
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-bold">Scrum Board</h1>
@@ -10,7 +19,7 @@
             variant="outline"
             @click="refreshTasks"
             :loading="scrumBoard.isLoading"
-            title="Obnovit úkoly z Freelo"
+            title="Obnovit úkoly"
           >
             Obnovit
           </UButton>
@@ -18,28 +27,28 @@
             icon="i-heroicons-plus"
             @click="openAddTaskModal"
           >
-            Add Task
+            Nový úkol
           </UButton>
         </div>
       </div>
-      
+
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
         <UCard>
           <div class="text-center">
             <div class="text-2xl font-bold text-blue-600">{{ projectTasks.length }}</div>
-            <div class="text-sm text-gray-500">Total Tasks</div>
+            <div class="text-sm text-gray-500">Celkem úkolů</div>
           </div>
         </UCard>
         <UCard>
           <div class="text-center">
             <div class="text-2xl font-bold text-yellow-600">{{ tasksByStatus('in-progress').length }}</div>
-            <div class="text-sm text-gray-500">In Progress</div>
+            <div class="text-sm text-gray-500">Rozpracované</div>
           </div>
         </UCard>
         <UCard>
           <div class="text-center">
             <div class="text-2xl font-bold text-green-600">{{ tasksByStatus('done').length }}</div>
-            <div class="text-sm text-gray-500">Completed</div>
+            <div class="text-sm text-gray-500">Dokončené</div>
           </div>
         </UCard>
         <UCard>
@@ -47,21 +56,19 @@
             <div class="text-2xl font-bold text-gray-600">
               {{ Math.round((tasksByStatus('done').length / Math.max(projectTasks.length, 1)) * 100) }}%
             </div>
-            <div class="text-sm text-gray-500">Progress</div>
+            <div class="text-sm text-gray-500">Postup</div>
           </div>
         </UCard>
       </div>
     </div>
 
-    <!-- Loading State -->
     <div v-if="scrumBoard.isLoading" class="flex items-center justify-center py-20">
       <div class="text-center">
-        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4" />
         <p class="text-gray-500">Načítám úkoly...</p>
       </div>
     </div>
 
-    <!-- Kanban Board -->
     <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div
         v-for="column in scrumBoard.columns"
@@ -72,10 +79,10 @@
           <template #header>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
-                <div 
+                <div
                   class="w-3 h-3 rounded-full"
                   :class="`bg-${column.color}-500`"
-                ></div>
+                />
                 <h3 class="font-semibold">{{ column.title }}</h3>
                 <UBadge :color="column.color" variant="soft">
                   {{ tasksByStatus(column.status).length }}
@@ -84,7 +91,7 @@
             </div>
           </template>
 
-          <div 
+          <div
             class="space-y-3 min-h-[400px] drop-zone"
             @drop="handleDrop($event, column.status)"
             @dragover.prevent="handleDragOver($event)"
@@ -95,18 +102,17 @@
               v-for="task in tasksByStatus(column.status)"
               :key="task.id"
               :task="task"
+              @select="selectedTask = $event"
               @edit="editTask"
               @delete="deleteTask"
               @move="moveTask"
             />
-            
-            <!-- Empty state -->
-            <div 
+            <div
               v-if="tasksByStatus(column.status).length === 0"
               class="text-center text-gray-500 dark:text-gray-400 py-8"
             >
-                <ClipboardDocumentListIcon class="w-12 h-12 mx-auto mb-2 text-gray-400 dark:text-gray-300" />
-              <p>No tasks in this column</p>
+              <div class="i-heroicons-clipboard-document-list w-12 h-12 mx-auto mb-2 text-gray-400 dark:text-gray-300" />
+              <p>Žádné úkoly</p>
             </div>
           </div>
         </UCard>
@@ -117,28 +123,27 @@
     <UModal v-model="showAddTaskModal">
       <UCard>
         <template #header>
-          <h3 class="text-lg font-semibold">Add New Task</h3>
+          <h3 class="text-lg font-semibold">Nový úkol</h3>
         </template>
 
         <UForm id="addTaskForm" :state="newTask" @submit="addTask" class="space-y-4">
-          <UFormGroup label="Title" required>
-            <UInput v-model="newTask.title" placeholder="Enter task title" />
+          <UFormGroup label="Název" required>
+            <UInput v-model="newTask.title" placeholder="Název úkolu" :disabled="isAddingTask" />
           </UFormGroup>
 
-          <UFormGroup label="Description">
-            <UTextarea v-model="newTask.description" placeholder="Enter task description" />
+          <UFormGroup label="Popis">
+            <UTextarea v-model="newTask.description" placeholder="Popis úkolu" :disabled="isAddingTask" />
           </UFormGroup>
 
           <div class="grid grid-cols-2 gap-4">
-            <UFormGroup label="Priority">
+            <UFormGroup label="Priorita">
               <USelect
                 v-model="newTask.priority"
                 :options="priorityOptions"
-                placeholder="Select priority"
+                placeholder="Priorita"
               />
             </UFormGroup>
-
-            <UFormGroup label="Story Points">
+            <UFormGroup label="Body (story points)">
               <UInput
                 v-model.number="newTask.storyPoints"
                 type="number"
@@ -150,32 +155,28 @@
           </div>
 
           <UFormGroup label="Řešitel">
-            <UInput 
-              v-model="newTask.assignee" 
-              :placeholder="currentUserDisplayName || 'Zadejte jméno řešitele'"
-              :disabled="false"
+            <UInput
+              v-model="newTask.assignee"
+              :placeholder="currentUserDisplayName || 'Jméno řešitele'"
             />
             <p v-if="currentUserDisplayName" class="text-xs text-gray-500 mt-1">
-              Aktuálně přihlášen: {{ currentUserDisplayName }}
+              Přihlášen: {{ currentUserDisplayName }}
             </p>
           </UFormGroup>
 
-          <UFormGroup label="Termín dokončení">
+          <UFormGroup label="Termín">
             <input
               v-model="newTask.dueDate"
               type="date"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-900"
             />
           </UFormGroup>
-
         </UForm>
         <template #footer>
           <div class="flex justify-end gap-2">
-            <UButton variant="ghost" @click="showAddTaskModal = false">
-              Zrušit
-            </UButton>
-            <UButton form="addTaskForm" type="submit" :disabled="!newTask.title">
-              Potvrdit
+            <UButton variant="ghost" @click="showAddTaskModal = false" :disabled="isAddingTask">Zrušit</UButton>
+            <UButton form="addTaskForm" type="submit" :disabled="!newTask.title.trim() || isAddingTask" :loading="isAddingTask">
+              Vytvořit úkol
             </UButton>
           </div>
         </template>
@@ -186,27 +187,26 @@
     <UModal v-model="showEditTaskModal">
       <UCard v-if="editingTask">
         <template #header>
-          <h3 class="text-lg font-semibold">Edit Task</h3>
+          <h3 class="text-lg font-semibold">Upravit úkol</h3>
         </template>
 
         <UForm id="editTaskForm" :state="editingTask" @submit="updateTask" class="space-y-4">
-          <UFormGroup label="Title" required>
+          <UFormGroup label="Název" required>
             <UInput v-model="editingTask.title" />
           </UFormGroup>
 
-          <UFormGroup label="Description">
+          <UFormGroup label="Popis">
             <UTextarea v-model="editingTask.description" />
           </UFormGroup>
 
           <div class="grid grid-cols-2 gap-4">
-            <UFormGroup label="Priority">
+            <UFormGroup label="Priorita">
               <USelect
                 v-model="editingTask.priority"
                 :options="priorityOptions"
               />
             </UFormGroup>
-
-            <UFormGroup label="Status">
+            <UFormGroup label="Stav">
               <USelect
                 v-model="editingTask.status"
                 :options="statusOptions"
@@ -214,54 +214,22 @@
             </UFormGroup>
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <UFormGroup label="Story Points">
-              <UInput
-                v-model.number="editingTask.storyPoints"
-                type="number"
-                min="0"
-                max="100"
-              />
-            </UFormGroup>
+          <UFormGroup label="Řešitel">
+            <UInput v-model="editingTask.assignee" placeholder="Jméno řešitele" />
+          </UFormGroup>
 
-            <UFormGroup label="Řešitel">
-              <USelect
-                v-model="editingTask.assignee"
-                :options="workerOptions"
-                :loading="isLoadingWorkers"
-                placeholder="Vyberte řešitele"
-                :disabled="isLoadingWorkers || workerOptions.length === 0"
-              >
-                <template v-if="workerOptions.length === 0 && !isLoadingWorkers">
-                  <option value="">Žádní členové týmu</option>
-                </template>
-              </USelect>
-              <p v-if="isLoadingWorkers" class="text-xs text-gray-500 mt-1">
-                Načítám členy týmu...
-              </p>
-              <p v-else-if="workerOptions.length === 0" class="text-xs text-gray-500 mt-1">
-                Projekt nemá žádné členy týmu
-              </p>
-            </UFormGroup>
-          </div>
-
-          <UFormGroup label="Termín dokončení">
+          <UFormGroup label="Termín">
             <input
               v-model="editingTask.dueDate"
               type="date"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-900"
             />
           </UFormGroup>
-
         </UForm>
         <template #footer>
           <div class="flex justify-end gap-2">
-            <UButton variant="ghost" @click="showEditTaskModal = false">
-              Cancel
-            </UButton>
-            <UButton form="editTaskForm" type="submit">
-              Update Task
-            </UButton>
+            <UButton variant="ghost" @click="showEditTaskModal = false">Zrušit</UButton>
+            <UButton form="editTaskForm" type="submit">Uložit</UButton>
           </div>
         </template>
       </UCard>
@@ -271,39 +239,29 @@
 
 <script setup lang="ts">
 import type { TaskItem } from '~/stores/todos';
-import { ClipboardDocumentListIcon } from '@heroicons/vue/24/outline'
 
 const props = defineProps<{
   projectId: string;
 }>();
 
 const scrumBoard = useScrumBoardStore();
-const freeloTasks = useFreeloTasks();
-const freeloProjects = useFreeloProjects();
-const auth = useFreeloAuth();
+const auth = useAuth();
 const firestoreTasks = useFirestoreTasks();
 
-// Filter tasks by project
 const projectTasks = computed(() => {
   return scrumBoard.tasks.filter(task => task.projectId === props.projectId);
 });
 
-// Override tasksByStatus to filter by project
 const tasksByStatus = (status: 'todo' | 'in-progress' | 'done') => {
   return projectTasks.value.filter(task => task.status === status);
 };
 
-// Modal states
 const showAddTaskModal = ref(false);
 const showEditTaskModal = ref(false);
 const editingTask = ref<TaskItem | null>(null);
-const originalTask = ref<TaskItem | null>(null);
+const isAddingTask = ref(false);
+const selectedTask = ref<TaskItem | null>(null);
 
-// Project workers (for assignee dropdown)
-const projectWorkers = ref<Array<{ id: number; fullname: string }>>([]);
-const isLoadingWorkers = ref(false);
-
-// Form data
 const newTask = ref({
   title: '',
   description: '',
@@ -314,37 +272,24 @@ const newTask = ref({
   dueDate: ''
 });
 
-// Options
 const priorityOptions = [
-  { label: 'Low', value: 'low' },
-  { label: 'Medium', value: 'medium' },
-  { label: 'High', value: 'high' }
+  { label: 'Nízká', value: 'low' },
+  { label: 'Střední', value: 'medium' },
+  { label: 'Vysoká', value: 'high' }
 ];
 
 const statusOptions = [
   { label: 'To Do', value: 'todo' },
-  { label: 'In Progress', value: 'in-progress' },
-  { label: 'Done', value: 'done' }
+  { label: 'Rozpracováno', value: 'in-progress' },
+  { label: 'Hotovo', value: 'done' }
 ];
 
-// Computed property for current user display name
 const currentUserDisplayName = computed(() => {
   if (!auth.user.value) return null;
   return auth.user.value.displayName || auth.user.value.email || null;
 });
 
-// Extract Freelo project ID from projectId (format: "freelo-123")
-const getFreeloProjectId = (projectId: string): number | null => {
-  if (projectId.startsWith('freelo-')) {
-    const id = parseInt(projectId.replace('freelo-', ''));
-    return isNaN(id) ? null : id;
-  }
-  return null;
-};
-
-// Methods
 function openAddTaskModal() {
-  // Set assignee to current user when opening modal
   if (auth.user.value) {
     newTask.value.assignee = auth.user.value.displayName || auth.user.value.email || '';
   }
@@ -352,325 +297,106 @@ function openAddTaskModal() {
 }
 
 async function addTask() {
-  if (!newTask.value.title) return;
-  
+  const title = newTask.value.title?.trim();
+  if (!title) return;
   if (!auth.isAuthenticated) {
-    alert('Musíte být přihlášeni pro přidání úkolu');
+    const toast = useToast();
+    toast.add({ title: 'Pro přidání úkolu se přihlaste', color: 'red' });
     return;
   }
-  
+
+  isAddingTask.value = true;
+  const toast = useToast();
+
   try {
-    // Získat Freelo project ID
-    const freeloProjectId = getFreeloProjectId(props.projectId);
-    if (!freeloProjectId) {
-      alert('Neplatné ID projektu. Úkol musí být vytvořen v existujícím Freelo projektu.');
-      return;
-    }
-    
-    // Načíst detail projektu pro získání tasklist ID
-    const projectDetail = await freeloProjects.fetchProjectById(freeloProjectId);
-    if (!projectDetail || !projectDetail.tasklists || projectDetail.tasklists.length === 0) {
-      alert('Projekt nemá žádné tasklisty. Vytvořte tasklist v Freelo aplikaci.');
-      return;
-    }
-    
-    // Použít první tasklist (v produkci bychom měli nechat uživatele vybrat)
-    const tasklistId = projectDetail.tasklists[0].id;
-    
-    // Převést priority na Freelo formát
-    const priorityMap: Record<string, 'l' | 'm' | 'h'> = {
-      'low': 'l',
-      'medium': 'm',
-      'high': 'h'
-    };
-    
-    // Připravit data pro Freelo API
-    const freeloTaskData: any = {
-      name: newTask.value.title,
-      priority_enum: priorityMap[newTask.value.priority] || 'm',
-    };
-    
-    // Přidat due_date pokud je zadán
-    if (newTask.value.dueDate) {
-      const dueDate = new Date(newTask.value.dueDate);
-      freeloTaskData.due_date = dueDate.toISOString();
-    }
-    
-    // Přidat komentář jako description pokud je zadán
-    if (newTask.value.description) {
-      freeloTaskData.comment = {
-        content: newTask.value.description
-      };
-    }
-    
-    // TODO: Převést assignee (řešitel) na worker ID - vyžaduje načtení seznamu uživatelů z Freelo
-    
-    // Vytvořit úkol přes Freelo API
-    await freeloTasks.createTask(freeloProjectId, tasklistId, freeloTaskData);
-    
-    // Reset form
-    newTask.value = {
-      title: '',
-      description: '',
-      priority: 'medium',
-      assignee: '',
-      storyPoints: 0,
+    const id = await firestoreTasks.addTask({
+      title,
+      description: newTask.value.description?.trim(),
+      priority: newTask.value.priority,
+      assignee: newTask.value.assignee?.trim(),
+      storyPoints: newTask.value.storyPoints ?? 0,
       status: 'todo',
-      dueDate: ''
-    };
-    
-    showAddTaskModal.value = false;
-    
-    // Znovu načíst úkoly z Freelo
-    await loadTasksFromFreelo();
-    
-    alert('Úkol byl úspěšně vytvořen v Freelo!');
+      projectId: props.projectId,
+      dueDate: newTask.value.dueDate ? new Date(newTask.value.dueDate) : undefined
+    });
+    if (id) {
+      newTask.value = {
+        title: '',
+        description: '',
+        priority: 'medium',
+        assignee: '',
+        storyPoints: 0,
+        status: 'todo',
+        dueDate: ''
+      };
+      showAddTaskModal.value = false;
+      toast.add({ title: 'Úkol byl vytvořen', color: 'green' });
+    } else {
+      toast.add({ title: 'Nepodařilo se vytvořit úkol', color: 'red' });
+    }
   } catch (error: any) {
-    console.error('[ScrumBoard] Error creating task:', error);
-    alert('Chyba při vytváření úkolu: ' + (error.message || 'Neznámá chyba'));
+    console.error('[ScrumBoard] Error adding task:', error);
+    toast.add({ title: error.message || 'Chyba při vytváření úkolu', color: 'red' });
+  } finally {
+    isAddingTask.value = false;
   }
 }
 
-// Load project workers
-const loadProjectWorkers = async () => {
-  const freeloProjectId = getFreeloProjectId(props.projectId);
-  if (!freeloProjectId) {
-    console.warn('[ScrumBoard] Cannot load workers - invalid project ID');
-    return;
-  }
-  
-  isLoadingWorkers.value = true;
-  try {
-    const workers = await freeloProjects.fetchProjectWorkers(freeloProjectId);
-    projectWorkers.value = workers;
-    console.log('[ScrumBoard] Loaded', workers.length, 'workers for project');
-  } catch (error: any) {
-    console.error('[ScrumBoard] Error loading project workers:', error);
-    projectWorkers.value = [];
-  } finally {
-    isLoadingWorkers.value = false;
-  }
-};
-
-// Worker options for select
-const workerOptions = computed(() => {
-  return projectWorkers.value.map(worker => ({
-    label: worker.fullname,
-    value: worker.id.toString()
-  }));
-});
-
-async function editTask(task: TaskItem) {
-  // Uložit původní úkol pro porovnání změn
-  originalTask.value = { ...task };
-  
-  // Convert Date to string for the HTML date input
+function editTask(task: TaskItem) {
   const taskCopy: any = { ...task };
   if (task.dueDate) {
-    const date = new Date(task.dueDate);
-    taskCopy.dueDate = date.toISOString().split('T')[0];
+    const d = new Date(task.dueDate);
+    taskCopy.dueDate = d.toISOString().split('T')[0];
   }
-  
   editingTask.value = taskCopy;
-  
-  // Načíst workers při otevření modalu
-  await loadProjectWorkers();
-  
-  // Po načtení workers nastavit správný worker ID do assignee pro select
-  // Použít freeloWorkerId pokud existuje, jinak najít podle jména
-  if (projectWorkers.value.length > 0) {
-    let worker = null;
-    
-    // Nejdřív zkusit najít podle freeloWorkerId
-    if (task.freeloWorkerId) {
-      worker = projectWorkers.value.find(w => w.id === task.freeloWorkerId);
-    }
-    
-    // Pokud ne, zkusit najít podle jména v assignee
-    if (!worker && taskCopy.assignee) {
-      worker = projectWorkers.value.find(w => 
-        w.fullname === taskCopy.assignee || 
-        w.id.toString() === taskCopy.assignee
-      );
-    }
-    
-    if (worker) {
-      // Nastavit worker ID do assignee pro select (pouze pro editaci)
-      taskCopy.assignee = worker.id.toString();
-      editingTask.value = taskCopy;
-    }
-  }
-  
   showEditTaskModal.value = true;
 }
 
 async function updateTask() {
-  if (!editingTask.value || !originalTask.value) return;
-  
-  try {
-    const taskId = editingTask.value.id;
-    const freeloUpdates: any = {};
-    let hasChanges = false;
-    
-    // Porovnat změny s původním úkolem
-    // Název
-    if (editingTask.value.title !== originalTask.value.title) {
-      freeloUpdates.name = editingTask.value.title;
-      hasChanges = true;
-    }
-    
-    // Termín - porovnat datumy (bez času)
-    const originalDueDate = originalTask.value.dueDate 
-      ? new Date(originalTask.value.dueDate).toISOString().split('T')[0]
-      : null;
-    const newDueDate = editingTask.value.dueDate 
-      ? (typeof editingTask.value.dueDate === 'string' 
-          ? editingTask.value.dueDate 
-          : new Date(editingTask.value.dueDate).toISOString().split('T')[0])
-      : null;
-    
-    if (originalDueDate !== newDueDate) {
-      if (newDueDate) {
-        const dueDate = typeof editingTask.value.dueDate === 'string' 
-          ? new Date(editingTask.value.dueDate)
-          : editingTask.value.dueDate;
-        freeloUpdates.due_date = dueDate.toISOString();
-      } else {
-        // Pokud byl termín odstraněn, poslat null nebo prázdný string
-        freeloUpdates.due_date = null;
-      }
-      hasChanges = true;
-    }
-    
-    // Priorita
-    if (editingTask.value.priority !== originalTask.value.priority) {
-      const priorityMap: Record<string, 'l' | 'm' | 'h'> = {
-        'low': 'l',
-        'medium': 'm',
-        'high': 'h'
-      };
-      freeloUpdates.priority_enum = priorityMap[editingTask.value.priority] || 'm';
-      hasChanges = true;
-    }
-    
-    // Řešitel (worker) - převést z string ID na number
-    // Porovnat buď worker ID (pokud je to číslo) nebo jméno
-    const originalAssignee = originalTask.value.assignee || '';
-    const newAssignee = editingTask.value.assignee || '';
-    
-    // Porovnat worker ID - pokud se změnil worker v selectu (ID), nebo se změnilo jméno
-    const originalWorkerId = originalTask.value.freeloWorkerId;
-    let newWorkerId: number | null = null;
-    
-    if (newAssignee) {
-      // Zkusit parsovat jako worker ID (číslo)
-      const workerId = parseInt(newAssignee);
-      if (!isNaN(workerId) && workerId > 0) {
-        // Je to worker ID z selectu
-        newWorkerId = workerId;
-      } else {
-        // Pokud je to jméno, zkusit najít worker podle jména
-        const worker = projectWorkers.value.find(w => w.fullname === newAssignee);
-        if (worker) {
-          newWorkerId = worker.id;
-        }
-      }
-    }
-    
-    // Zkontrolovat, jestli se worker změnil
-    if (newWorkerId !== originalWorkerId) {
-      freeloUpdates.worker = newWorkerId;
-      hasChanges = true;
-    }
-    
-    // Pokud nejsou žádné změny, jen zavřít modal
-    if (!hasChanges) {
-      console.log('[ScrumBoard] No changes detected, skipping API call');
-      showEditTaskModal.value = false;
-      editingTask.value = null;
-      originalTask.value = null;
-      return;
-    }
-    
-    console.log('[ScrumBoard] Changes detected:', freeloUpdates);
-    
-    // Aktualizovat úkol přes Freelo API (pouze pokud jsou změny)
-    await freeloTasks.updateTask(taskId, freeloUpdates);
-    
-    // Aktualizovat lokální stav
-    // Najít worker podle ID a uložit jeho jméno do assignee
-    let assigneeName = editingTask.value.assignee;
-    let workerId: number | undefined = undefined;
-    
-    const selectedWorkerId = parseInt(editingTask.value.assignee || '');
-    if (!isNaN(selectedWorkerId) && selectedWorkerId > 0) {
-      const worker = projectWorkers.value.find(w => w.id === selectedWorkerId);
-      if (worker) {
-        assigneeName = worker.fullname;
-        workerId = worker.id;
-      }
-    }
-    
-    scrumBoard.updateTask(taskId, {
-      title: editingTask.value.title,
-      description: editingTask.value.description,
-      priority: editingTask.value.priority,
-      assignee: assigneeName, // Uložit jméno pro zobrazení
-      freeloWorkerId: workerId, // Uložit worker ID pro další editaci
-      dueDate: editingTask.value.dueDate ? (typeof editingTask.value.dueDate === 'string' ? new Date(editingTask.value.dueDate) : editingTask.value.dueDate) : undefined,
-    });
-    
-    // Znovu načíst úkoly z Freelo pro synchronizaci
-    await loadTasksFromFreelo();
-    
+  if (!editingTask.value) return;
+  const taskId = editingTask.value.id;
+  const updates: Partial<TaskItem> = {
+    title: editingTask.value.title,
+    description: editingTask.value.description,
+    priority: editingTask.value.priority,
+    assignee: editingTask.value.assignee,
+    storyPoints: editingTask.value.storyPoints,
+    status: editingTask.value.status
+  };
+  if (editingTask.value.dueDate) {
+    updates.dueDate = typeof editingTask.value.dueDate === 'string'
+      ? new Date(editingTask.value.dueDate)
+      : editingTask.value.dueDate;
+  } else {
+    updates.dueDate = undefined;
+  }
+  const ok = await firestoreTasks.updateTask(taskId, updates);
+  if (ok) {
     showEditTaskModal.value = false;
     editingTask.value = null;
-    originalTask.value = null;
-  } catch (error: any) {
-    console.error('[ScrumBoard] Error updating task:', error);
-    alert('Chyba při aktualizaci úkolu: ' + (error.message || 'Neznámá chyba'));
+  } else {
+    alert('Nepodařilo se uložit změny.');
   }
 }
 
 async function deleteTask(taskId: string) {
-  if (confirm('Are you sure you want to delete this task?')) {
-    // Poznámka: Mazání úkolů přes Freelo API
-    alert('Mazání úkolů je momentálně dostupné pouze v Freelo aplikaci.');
+  if (!confirm('Opravdu chcete smazat tento úkol?')) return;
+  const ok = await firestoreTasks.deleteTask(taskId);
+  if (!ok) {
+    alert('Nepodařilo se smazat úkol.');
   }
 }
 
 async function moveTask(taskId: string, newStatus: string) {
-  try {
-    const task = scrumBoard.tasks.find(t => t.id === taskId);
-    if (!task) {
-      console.warn('[ScrumBoard] Task not found:', taskId);
-      return;
-    }
-    
-    if (newStatus === 'done') {
-      await freeloTasks.finishTask(taskId);
-    } else if (newStatus === 'todo') {
-      await freeloTasks.activateTask(taskId);
-    } else {
-      await freeloTasks.updateTask(taskId, { state_id: 1 });
-    }
-    
-    // Aktualizovat lokální stav
-    scrumBoard.updateTaskStatus(taskId, newStatus as 'todo' | 'in-progress' | 'done');
-    
-    // Znovu načíst úkoly z Freelo pro synchronizaci
-    await loadTasksFromFreelo();
-  } catch (error: any) {
-    console.error('[ScrumBoard] Error moving task:', error);
-    alert('Chyba při změně stavu úkolu: ' + (error.message || 'Neznámá chyba'));
+  const ok = await firestoreTasks.updateTaskStatus(taskId, newStatus as 'todo' | 'in-progress' | 'done');
+  if (!ok) {
+    alert('Nepodařilo se změnit stav úkolu.');
   }
 }
 
 function handleDragOver(event: DragEvent) {
   event.preventDefault();
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move';
-  }
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 }
 
 function handleDragEnter(event: DragEvent) {
@@ -681,17 +407,10 @@ function handleDragEnter(event: DragEvent) {
 }
 
 function handleDragLeave(event: DragEvent) {
-  // Zkontrolovat, jestli opouštíme skutečně drop zónu (ne jen child element)
   if (event.currentTarget instanceof HTMLElement) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX;
-    const y = event.clientY;
-    
-    // Pokud jsme stále uvnitř elementu, neodstraňovat třídu
-    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-      return;
-    }
-    
+    const { clientX: x, clientY: y } = event;
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return;
     event.currentTarget.classList.remove('drag-over');
   }
 }
@@ -699,215 +418,44 @@ function handleDragLeave(event: DragEvent) {
 async function handleDrop(event: DragEvent, targetStatus: string) {
   event.preventDefault();
   event.stopPropagation();
-  
-  console.log('[ScrumBoard] ===== handleDrop CALLED =====');
-  console.log('[ScrumBoard] Target status:', targetStatus);
-  
-  // Odstranit drag-over třídu
   if (event.currentTarget instanceof HTMLElement) {
     event.currentTarget.classList.remove('drag-over');
   }
-  
-  if (!event.dataTransfer) {
-    console.warn('[ScrumBoard] No dataTransfer in drop event');
-    return;
-  }
-  
-  const taskId = event.dataTransfer.getData('text/plain');
-  
-  if (!taskId) {
-    console.warn('[ScrumBoard] No task ID in dataTransfer');
-    return;
-  }
-  
-  console.log('[ScrumBoard] ===== Dropping task =====');
-  console.log('[ScrumBoard] Task ID:', taskId);
-  console.log('[ScrumBoard] Target status:', targetStatus);
-  
-  // Najít úkol před try blokem, aby byl dostupný i v catch bloku
+  const taskId = event.dataTransfer?.getData('text/plain');
+  if (!taskId) return;
+
   const task = scrumBoard.tasks.find(t => t.id === taskId);
-  if (!task) {
-    console.warn('[ScrumBoard] Task not found:', taskId);
-    alert('Úkol nebyl nalezen. Zkuste obnovit stránku.');
-    return;
-  }
-  
-  // Uložit původní stav pro rollback
+  if (!task) return;
+  if (task.status === targetStatus) return;
+
   const originalStatus = task.status;
-  
-  try {
-    // Zkontrolovat, jestli se stav skutečně změnil
-    if (task.status === targetStatus) {
-      console.log('[ScrumBoard] Task already in target status, skipping');
-      return;
-    }
-    
-    console.log('[ScrumBoard] Current status:', task.status);
-    console.log('[ScrumBoard] Target status:', targetStatus);
-    
-    // FREELO API PŘÍSTUP: Synchronizovat stav s Freelo API jako hlavní zdroj
-    // 1. Nejdřív aktualizovat stav v lokálním store (okamžitá UI aktualizace)
-    console.log('[ScrumBoard] Updating local state...');
-    scrumBoard.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
-    
-    // 2. Pro Freelo úkoly: synchronizovat s Freelo API (hlavní akce)
-    if (task.id.startsWith('freelo-')) {
-      console.log('[ScrumBoard] Syncing status with Freelo API...');
-      await syncTaskStatusWithFreelo(task.id, targetStatus);
-      console.log('[ScrumBoard] ✅ Status synced with Freelo');
-    } else {
-      // Pro normální úkoly: uložit do Firebase (jako předtím)
-      const firestoreTasks = useFirestoreTasks();
-      console.log('[ScrumBoard] Saving status to Firebase...');
-      await firestoreTasks.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
-      console.log('[ScrumBoard] ✅ Status saved to Firebase');
-    }
-    
-    console.log('[ScrumBoard] ===== Task status updated successfully =====');
-  } catch (error: any) {
-    console.error('[ScrumBoard] ❌ Error updating task status:', error);
-    
-    // Vrátit úkol zpět do původního stavu v UI (rollback)
-    if (task && originalStatus) {
-      scrumBoard.updateTaskStatus(taskId, originalStatus as 'todo' | 'in-progress' | 'done');
-    }
-    
-    // Zobrazit uživatelsky přívětivou chybovou zprávu
-    const errorMessage = error.message || 'Neznámá chyba';
-    alert('Chyba při aktualizaci stavu úkolu: ' + errorMessage);
+  scrumBoard.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
+
+  const ok = await firestoreTasks.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
+  if (!ok) {
+    scrumBoard.updateTaskStatus(taskId, originalStatus as 'todo' | 'in-progress' | 'done');
+    alert('Nepodařilo se změnit stav úkolu.');
   }
 }
 
-// Hlavní funkce pro synchronizaci stavu s Freelo API
-async function syncTaskStatusWithFreelo(taskId: string, targetStatus: string) {
-  console.log('[ScrumBoard] Syncing task status with Freelo:', taskId, '→', targetStatus);
-  
-  if (targetStatus === 'done') {
-    // Dokončit úkol ve Freelo
-    await freeloTasks.finishTask(taskId);
-    console.log('[ScrumBoard] ✅ Freelo: Task finished');
-  } else if (targetStatus === 'in-progress') {
-    // Zkontrolovat, jestli úkol není finished (pak ho musíme aktivovat)
-    const taskDetail = await freeloTasks.fetchTaskDetail(taskId);
-    if (taskDetail?.state?.state === 'finished') {
-      await freeloTasks.activateTask(taskId);
-      console.log('[ScrumBoard] ✅ Freelo: Task activated');
-    }
-    
-    // Přidat label "In progress"
-    await freeloTasks.addInProgressLabel(taskId);
-    console.log('[ScrumBoard] ✅ Freelo: In-progress label added');
-  } else if (targetStatus === 'todo') {
-    // Zkontrolovat, jestli úkol není finished (pak ho musíme aktivovat)
-    const taskDetail = await freeloTasks.fetchTaskDetail(taskId);
-    if (taskDetail?.state?.state === 'finished') {
-      await freeloTasks.activateTask(taskId);
-      console.log('[ScrumBoard] ✅ Freelo: Task activated');
-    }
-    
-    // Odstranit label "In progress" pokud existuje
-    await freeloTasks.removeInProgressLabel(taskId);
-    console.log('[ScrumBoard] ✅ Freelo: In-progress label removed');
-  }
+function refreshTasks() {
+  firestoreTasks.startListening(props.projectId);
 }
 
-// Load tasks from Freelo API when component mounts
-onMounted(async () => {
-  console.log('[ScrumBoard] Component mounted, auth status:', auth.isAuthenticated);
+onMounted(() => {
   if (auth.isAuthenticated && props.projectId) {
-    await loadTasksFromFreelo();
+    firestoreTasks.startListening(props.projectId);
   }
 });
 
-// Load tasks from Freelo API
-const loadTasksFromFreelo = async () => {
-  try {
-    scrumBoard.setLoading(true);
-    
-    const freeloProjectId = getFreeloProjectId(props.projectId);
-    if (!freeloProjectId) {
-      console.warn('[ScrumBoard] Invalid Freelo project ID:', props.projectId);
-      scrumBoard.setLoading(false);
-      return;
-    }
-
-    // Získat ID přihlášeného uživatele pro filtrování úkolů
-    const workerId = auth.user.value?.id;
-    
-    console.log('[ScrumBoard] ===== Loading tasks from Freelo =====');
-    console.log('[ScrumBoard] Project ID:', freeloProjectId);
-    console.log('[ScrumBoard] Worker ID:', workerId || 'all tasks');
-    
-    const tasks = await freeloTasks.syncTasksForProject(freeloProjectId, workerId);
-    
-    // Odstranit duplikáty podle ID (pro jistotu)
-    const uniqueTasksMap = new Map<string, TaskItem>();
-    tasks.forEach(task => {
-      if (!uniqueTasksMap.has(task.id)) {
-        uniqueTasksMap.set(task.id, task);
-      } else {
-        console.warn('[ScrumBoard] Duplicate task found before storing:', task.id, task.title);
-      }
-    });
-    const uniqueTasks = Array.from(uniqueTasksMap.values());
-    
-    // Debug: zkontrolovat stavy načtených úkolů
-    const tasksByStatus = {
-      todo: uniqueTasks.filter(t => t.status === 'todo').length,
-      inProgress: uniqueTasks.filter(t => t.status === 'in-progress').length,
-      done: uniqueTasks.filter(t => t.status === 'done').length
-    };
-    
-    console.log('[ScrumBoard] Tasks loaded by status:', tasksByStatus);
-    console.log('[ScrumBoard] Total tasks:', uniqueTasks.length, '(removed', tasks.length - uniqueTasks.length, 'duplicates)');
-    console.log('[ScrumBoard] Sample tasks:', uniqueTasks.slice(0, 3).map(t => ({
-      id: t.id,
-      title: t.title,
-      status: t.status
-    })));
-    
-    // Update store with unique tasks
-    scrumBoard.setTasks(uniqueTasks);
-    console.log('[ScrumBoard] ✅ Loaded', tasks.length, 'tasks from Freelo');
-    
-    if (tasks.length === 0 && workerId) {
-      console.log('[ScrumBoard] No tasks found. This might mean:');
-      console.log('  - No tasks are assigned to you in this project');
-      console.log('  - Try loading all tasks (remove worker_id filter)');
-    }
-  } catch (error: any) {
-    console.error('[ScrumBoard] ❌ Error loading tasks from Freelo:', error);
-    alert('Chyba při načítání úkolů: ' + (error.message || 'Neznámá chyba'));
-  } finally {
-    scrumBoard.setLoading(false);
-  }
-};
-
-// Refresh tasks manually
-const refreshTasks = async () => {
-  console.log('[ScrumBoard] Manual refresh requested');
-  await loadTasksFromFreelo();
-};
-
-// Watch for authentication changes
-watch(() => auth.isAuthenticated, (isAuth, wasAuth) => {
-  console.log('[ScrumBoard] Auth changed:', { wasAuth, isAuth, userEmail: auth.user.value?.email });
-  if (isAuth && props.projectId) {
-    console.log('[ScrumBoard] User logged in, loading tasks');
-    loadTasksFromFreelo();
+watch(() => [auth.isAuthenticated, props.projectId], ([isAuth, pid]) => {
+  if (isAuth && pid) {
+    firestoreTasks.startListening(pid as string);
   } else {
-    console.log('[ScrumBoard] User logged out, clearing tasks');
+    firestoreTasks.stopListening();
     scrumBoard.clearTasks();
   }
-});
-
-// Watch for project changes
-watch(() => props.projectId, async (newProjectId) => {
-  if (newProjectId && auth.isAuthenticated) {
-    console.log('[ScrumBoard] Project changed, loading tasks');
-    await loadTasksFromFreelo();
-  }
-});
+}, { immediate: false });
 </script>
 
 <style scoped>
@@ -924,9 +472,5 @@ watch(() => props.projectId, async (newProjectId) => {
 .drop-zone.drag-over {
   background-color: rgba(59, 130, 246, 0.1);
   border: 2px dashed #3b82f6;
-}
-
-.scrum-board {
-  min-height: 100vh;
 }
 </style>

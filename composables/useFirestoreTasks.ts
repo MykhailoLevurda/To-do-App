@@ -19,7 +19,7 @@ import type { TaskItem } from '~/stores/todos';
 export const useFirestoreTasks = () => {
   const { $firestore } = useNuxtApp();
   const firestore = $firestore;
-  const auth = useFreeloAuth(); // Změněno z useAuth() na useFreeloAuth()
+  const auth = useAuth();
   const scrumBoardStore = useScrumBoardStore();
 
   let unsubscribe: Unsubscribe | null = null;
@@ -30,8 +30,7 @@ export const useFirestoreTasks = () => {
     if (unsubscribe) unsubscribe();
 
     const tasksRef = collection(firestore, 'tasks');
-    // Pro Freelo auth používáme email místo uid
-    const userId = auth.user.value.email || 'unknown';
+    const userId = auth.user.value.uid;
     let q = query(tasksRef, where('createdBy', '==', userId));
     
     // Pokud je zadán projectId, filtrovat podle projektu
@@ -59,11 +58,6 @@ export const useFirestoreTasks = () => {
           updatedAt: data.updatedAt?.toDate() || new Date()
         };
         
-        // Uložit freeloId pokud existuje (pro synchronizaci s Freelo API)
-        if (data.freeloId) {
-          task.freeloId = data.freeloId;
-        }
-        
         tasks.push(task);
       });
 
@@ -84,8 +78,7 @@ export const useFirestoreTasks = () => {
 
     try {
       const tasksRef = collection(firestore, 'tasks');
-      // Pro Freelo auth používáme email místo uid
-      const createdBy = auth.user.value.email || 'unknown';
+      const createdBy = auth.user.value.uid;
       const docRef = await addDoc(tasksRef, {
         ...task,
         createdBy,
@@ -178,8 +171,7 @@ export const useFirestoreTasks = () => {
     if (!auth.user.value) return false;
 
     try {
-      // Pro Freelo auth používáme email místo uid
-      const userId = auth.user.value.email || 'unknown';
+      const userId = auth.user.value.uid;
 
       const projectsRef = collection(firestore, 'projects');
       const projectsQuery = query(projectsRef, where('createdBy', '==', userId));
@@ -244,16 +236,27 @@ export const useFirestoreTasks = () => {
   const addComment = async (taskId: string, text: string) => {
     if (!auth.user.value) return null;
 
+    const author = auth.user.value.email || auth.user.value.displayName || 'Neznámý';
+
     try {
       const ref = collection(firestore, 'tasks', taskId, 'comments');
-      // Pro Freelo auth používáme email místo uid
-      const userId = auth.user.value.email || 'unknown';
-      await addDoc(ref, {
+      const docRef = await addDoc(ref, {
         text,
-        author: auth.user.value.email || auth.user.value.displayName || 'Neznámý',
-        userId: userId,
+        author,
+        userId: auth.user.value.uid,
         createdAt: serverTimestamp()
       });
+
+      // Optimistická aktualizace – hned zobrazit komentář (listener ho pak může přepsat)
+      const optimisticComment = {
+        id: docRef.id,
+        text,
+        author,
+        userId: auth.user.value.uid,
+        createdAt: new Date()
+      };
+      const current = taskComments.value[taskId] || [];
+      taskComments.value = { ...taskComments.value, [taskId]: [...current, optimisticComment] };
 
       return true;
     } catch {
@@ -295,10 +298,13 @@ export const useFirestoreTasks = () => {
     const q = query(ref, orderBy('createdAt', 'asc'));
 
     commentUnsubscribes[taskId] = onSnapshot(q, (snapshot) => {
-      taskComments.value[taskId] = snapshot.docs.map((d) => ({
+      const next = { ...taskComments.value, [taskId]: snapshot.docs.map((d) => ({
         id: d.id,
         ...d.data()
-      }));
+      })) };
+      taskComments.value = next;
+    }, (err) => {
+      console.error('[Firestore Tasks] Comments listener error (zkontrolujte Firestore pravidla pro komentáře):', err);
     });
   };
 

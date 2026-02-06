@@ -1,48 +1,22 @@
-﻿<script setup lang="ts">
-const auth = useFreeloAuth();
+<script setup lang="ts">
+const auth = useAuth();
 const showAuthModal = ref(false);
 
-// Force remount Dashboard when user changes
 const dashboardKey = ref('initial');
 
-// Použijeme přímo auth.isAuthenticated pro lepší reaktivitu
-
-watch(() => auth.user.value?.email, (newEmail) => {
-  console.log('[Index Page] User email changed:', newEmail ?? '(no user)');
-  dashboardKey.value = newEmail || `no-user-${Date.now()}`;
+watch(() => auth.user.value?.uid, (newUid) => {
+  dashboardKey.value = newUid || `no-user-${Date.now()}`;
 }, { immediate: true });
 
 watch(() => auth.isAuthenticated, (isAuth) => {
-  console.log('[Index Page] Auth status changed:', isAuth);
-  
-  // Automaticky zavřít modal po úspěšném přihlášení
   if (isAuth && showAuthModal.value) {
-    console.log('[Index Page] User authenticated, closing auth modal');
     showAuthModal.value = false;
   }
 });
 
-// Watch pro user změny - také zavřít modal
 watch(() => auth.user.value, (newUser) => {
   if (newUser && showAuthModal.value) {
-    console.log('[Index Page] User logged in, closing auth modal');
     showAuthModal.value = false;
-  }
-});
-
-// Debug on mount
-onMounted(() => {
-  console.log('[Index Page] Mounted:', {
-    loading: auth.loading.value,
-    user: auth.user.value,
-    isAuthenticated: auth.isAuthenticated
-  });
-  
-  // Zkontrolovat, zda je uživatel přihlášen
-  if (auth.isAuthenticated) {
-    console.log('[Index Page] User is authenticated:', auth.user.value?.email ?? '(no email)');
-  } else {
-    console.log('[Index Page] User is not authenticated');
   }
 });
 </script>
@@ -57,9 +31,7 @@ onMounted(() => {
 
   <!-- Authenticated - Show Dashboard -->
   <template v-else-if="auth.isAuthenticated && auth.user.value">
-    <Dashboard 
-      :key="dashboardKey"
-    />
+    <Dashboard :key="dashboardKey" />
   </template>
 
   <!-- Not Authenticated - Show Login Message -->
@@ -79,6 +51,5 @@ onMounted(() => {
     </div>
   </div>
 
-  <!-- Auth Modal -->
   <AuthModal v-model="showAuthModal" />
 </template>

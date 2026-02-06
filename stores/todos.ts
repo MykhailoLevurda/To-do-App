@@ -13,7 +13,6 @@ export interface TaskItem {
   createdAt: Date;
   updatedAt: Date;
   approved?: boolean; // Pro schválení dokončených úkolů
-  freeloWorkerId?: number; // Freelo worker ID (pro editaci a synchronizaci)
 }
 
 export interface ScrumBoardState {

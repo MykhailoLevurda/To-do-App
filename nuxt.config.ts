@@ -1,4 +1,4 @@
-﻿import { defineNuxtConfig } from "nuxt/config";
+import { defineNuxtConfig } from "nuxt/config";
 
 export default defineNuxtConfig({
   modules: [
@@ -19,10 +19,7 @@ export default defineNuxtConfig({
       firebaseProjectId: process.env.NUXT_PUBLIC_FIREBASE_PROJECT_ID,
       firebaseStorageBucket: process.env.NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
       firebaseMessagingSenderId: process.env.NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-      firebaseAppId: process.env.NUXT_PUBLIC_FIREBASE_APP_ID,
-      // Freelo API credentials (volitelné, pro vývoj)
-      freeloEmail: process.env.NUXT_PUBLIC_FREELO_EMAIL,
-      freeloApiKey: process.env.NUXT_PUBLIC_FREELO_API_KEY
+      firebaseAppId: process.env.NUXT_PUBLIC_FIREBASE_APP_ID
     }
   },
   vite: {

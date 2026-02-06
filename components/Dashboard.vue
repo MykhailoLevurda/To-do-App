@@ -7,23 +7,13 @@
           <h1 class="text-3xl font-bold">Moje Projekty</h1>
           <p class="text-gray-500 mt-1">Správa všech vašich projektů a úkolů</p>
         </div>
-        <div class="flex gap-2">
-          <UButton
-            icon="i-heroicons-link"
-            size="lg"
-            variant="outline"
-            @click="handleAddFreeloProjectClick"
-          >
-            Přidat z Freelo
-          </UButton>
-          <UButton
-            icon="i-heroicons-plus"
-            size="lg"
-            @click="handleNewProjectClick"
-          >
-            Nový Projekt
-          </UButton>
-        </div>
+        <UButton
+          icon="i-heroicons-plus"
+          size="lg"
+          @click="handleNewProjectClick"
+        >
+          Nový Projekt
+        </UButton>
       </div>
     </div>
 
@@ -40,7 +30,6 @@
           </div>
         </div>
       </UCard>
-      
       <UCard>
         <div class="flex items-center gap-4">
           <div class="p-3 bg-green-100 rounded-lg">
@@ -52,7 +41,6 @@
           </div>
         </div>
       </UCard>
-      
       <UCard>
         <div class="flex items-center gap-4">
           <div class="p-3 bg-purple-100 rounded-lg">
@@ -76,7 +64,6 @@
 
     <!-- Projects List -->
     <div v-else>
-      <!-- Active Projects -->
       <div v-if="projectsStore.activeProjects.length > 0" class="mb-8">
         <h2 class="text-xl font-semibold mb-4">Aktivní projekty</h2>
         <div class="space-y-3">
@@ -92,7 +79,6 @@
         </div>
       </div>
 
-      <!-- Archived Projects -->
       <div v-if="projectsStore.archivedProjects.length > 0" class="mb-8">
         <h2 class="text-xl font-semibold mb-4 text-gray-500">Archivované projekty</h2>
         <div class="space-y-3">
@@ -108,8 +94,7 @@
         </div>
       </div>
 
-      <!-- Empty State -->
-      <div 
+      <div
         v-if="projectsStore.projects.length === 0"
         class="text-center py-20"
       >
@@ -125,52 +110,6 @@
       </div>
     </div>
 
-    <!-- Add Freelo Project Modal -->
-    <UModal v-model="showAddFreeloProjectModal">
-      <UCard>
-        <template #header>
-          <h3 class="text-lg font-semibold">
-            Přidat projekt z Freelo
-          </h3>
-        </template>
-
-        <UForm 
-          id="freeloProjectForm" 
-          :state="freeloProjectForm" 
-          @submit="addFreeloProject" 
-          class="space-y-4"
-        >
-          <UFormGroup label="Freelo Project ID" required>
-            <UInput 
-              v-model="freeloProjectForm.projectId" 
-              placeholder="Např. 12345"
-              type="number"
-              autofocus
-            />
-            <template #description>
-              Zadejte ID projektu z Freelo. ID najdete v URL projektu v Freelo aplikaci.
-            </template>
-          </UFormGroup>
-        </UForm>
-
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton variant="ghost" @click="closeFreeloProjectModal">
-              Zrušit
-            </UButton>
-            <UButton 
-              form="freeloProjectForm" 
-              type="submit" 
-              :disabled="!freeloProjectForm.projectId || isAddingFreeloProject"
-              :loading="isAddingFreeloProject"
-            >
-              Přidat projekt
-            </UButton>
-          </div>
-        </template>
-      </UCard>
-    </UModal>
-
     <!-- Add/Edit Project Modal -->
     <UModal v-model="showAddProjectModal">
       <UCard>
@@ -180,25 +119,27 @@
           </h3>
         </template>
 
-        <UForm 
-          id="projectForm" 
-          :state="projectForm" 
-          @submit="saveProject" 
+        <UForm
+          id="projectForm"
+          :state="projectForm"
+          @submit="saveProject"
           class="space-y-4"
         >
-          <UFormGroup label="Název projektu" required>
-            <UInput 
-              v-model="projectForm.name" 
+          <UFormGroup label="Název projektu" name="name" required>
+            <UInput
+              v-model="projectForm.name"
               placeholder="Např. Webová aplikace, Marketing kampaň..."
               autofocus
+              :disabled="isSaving"
             />
           </UFormGroup>
 
-          <UFormGroup label="Popis">
-            <UTextarea 
-              v-model="projectForm.description" 
+          <UFormGroup label="Popis" name="description">
+            <UTextarea
+              v-model="projectForm.description"
               placeholder="Krátký popis projektu..."
               rows="3"
+              :disabled="isSaving"
             />
           </UFormGroup>
 
@@ -214,29 +155,29 @@
                 ]"
                 :style="{ backgroundColor: color }"
                 @click="projectForm.color = color"
-              ></button>
+              />
             </div>
           </UFormGroup>
         </UForm>
 
         <template #footer>
           <div class="flex justify-end gap-2">
-            <UButton variant="ghost" @click="closeProjectModal">
+            <UButton variant="ghost" @click="closeProjectModal" :disabled="isSaving">
               Zrušit
             </UButton>
-            <UButton 
-              form="projectForm" 
-              type="submit" 
-              :disabled="!projectForm.name"
+            <UButton
+              form="projectForm"
+              type="submit"
+              :disabled="!projectForm.name.trim() || isSaving"
+              :loading="isSaving"
             >
-              {{ editingProject ? 'Uložit' : 'Vytvořit' }}
+              {{ editingProject ? 'Uložit' : 'Vytvořit projekt' }}
             </UButton>
           </div>
         </template>
       </UCard>
     </UModal>
 
-    <!-- Auth Modal -->
     <AuthModal v-model="showAuthModal" />
   </div>
 </template>
@@ -245,20 +186,17 @@
 import type { Project } from '~/types';
 
 const projectsStore = useProjectsStore();
-const freeloProjects = useFreeloProjects();
-const auth = useFreeloAuth();
+const firestoreProjects = useFirestoreProjects();
+const auth = useAuth();
 const router = useRouter();
 const route = useRoute();
 
-// Modal states
 const showAddProjectModal = ref(false);
-const showAddFreeloProjectModal = ref(false);
 const showAuthModal = ref(false);
 const editingProject = ref<Project | null>(null);
-const pendingProjectCreation = ref(false); // Flag pro otevření modalu po přihlášení
-const isAddingFreeloProject = ref(false);
+const pendingProjectCreation = ref(false);
+const isSaving = ref(false);
 
-// Form data
 const projectForm = ref({
   name: '',
   description: '',
@@ -266,149 +204,71 @@ const projectForm = ref({
   status: 'active' as 'active' | 'archived'
 });
 
-const freeloProjectForm = ref({
-  projectId: ''
-});
-
-// Available colors
 const availableColors = [
-  '#3b82f6', // blue
-  '#8b5cf6', // purple
-  '#ec4899', // pink
-  '#ef4444', // red
-  '#f97316', // orange
-  '#eab308', // yellow
-  '#22c55e', // green
-  '#06b6d4', // cyan
-  '#6366f1', // indigo
-  '#a855f7', // violet
+  '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#eab308',
+  '#22c55e', '#06b6d4', '#6366f1', '#a855f7',
 ];
 
-// Computed
 const totalTasks = computed(() => {
   return projectsStore.projects.reduce((sum, project) => sum + (project.taskCount || 0), 0);
 });
 
-// Methods
 function handleNewProjectClick() {
-  // Kontrola přihlášení před otevřením modalu
   if (!auth.isAuthenticated || !auth.user.value) {
-    pendingProjectCreation.value = true; // Označit, že chce vytvořit projekt
+    pendingProjectCreation.value = true;
     showAuthModal.value = true;
     return;
   }
-  
   showAddProjectModal.value = true;
 }
 
-function handleAddFreeloProjectClick() {
-  // Kontrola přihlášení před otevřením modalu
-  if (!auth.isAuthenticated || !auth.user.value) {
-    showAuthModal.value = true;
-    return;
-  }
-  
-  showAddFreeloProjectModal.value = true;
-}
-
-async function addFreeloProject() {
-  if (!freeloProjectForm.value.projectId) return;
-  
-  const projectId = parseInt(freeloProjectForm.value.projectId);
-  if (isNaN(projectId)) {
-    alert('Zadejte platné číslo projektu.');
-    return;
-  }
-  
-  // Kontrola přihlášení
-  if (!auth.isAuthenticated || !auth.user.value) {
-    showAddFreeloProjectModal.value = false;
-    showAuthModal.value = true;
-    alert('Pro přidání projektu se musíte přihlásit.');
-    return;
-  }
-  
-  isAddingFreeloProject.value = true;
-  
-  try {
-    // 1. Načíst detail projektu z Freelo API
-    const freeloProject = await freeloProjects.fetchProjectById(projectId);
-    
-    if (!freeloProject) {
-      alert('Projekt s ID ' + projectId + ' nebyl nalezen v Freelo.');
-      isAddingFreeloProject.value = false;
-      return;
-    }
-    
-    // 2. Zkontrolovat, jestli už projekt není v seznamu
-    const existingProject = projectsStore.projects.find(
-      p => (p as any).freeloId === freeloProject.id || p.id === `freelo-${freeloProject.id}`
-    );
-    
-    if (existingProject) {
-      alert('Tento projekt je již v seznamu projektů.');
-      isAddingFreeloProject.value = false;
-      return;
-    }
-    
-    // 3. Zavřít modal a zobrazit úspěch
-    closeFreeloProjectModal();
-    alert('Projekt byl úspěšně přidán! Projekty se načítají z Freelo API.');
-    
-    // 4. Znovu načíst projekty z Freelo API
-    await freeloProjects.syncProjects();
-    
-  } catch (error: any) {
-    console.error('[Dashboard] Error adding Freelo project:', error);
-    alert(error.message || 'Chyba při přidávání projektu. Zkuste to prosím znovu.');
-  } finally {
-    isAddingFreeloProject.value = false;
-  }
-}
-
-function closeFreeloProjectModal() {
-  showAddFreeloProjectModal.value = false;
-  freeloProjectForm.value = {
-    projectId: ''
-  };
-}
-
 async function saveProject() {
-  if (!projectForm.value.name) return;
-  
-  // Kontrola přihlášení před vytvořením projektu
+  const name = projectForm.value.name?.trim();
+  if (!name) return;
+
   if (!auth.isAuthenticated || !auth.user.value) {
     showAddProjectModal.value = false;
     showAuthModal.value = true;
-    alert('Pro vytvoření projektu se musíte přihlásit.');
     return;
   }
-  
+
+  isSaving.value = true;
+  const toast = useToast();
+
   try {
     if (editingProject.value) {
-      // Úprava existujícího projektu - zatím nepodporováno přes Freelo API
-      alert('Úprava projektů je dostupná pouze v Freelo aplikaci.');
-      closeProjectModal();
-      return;
+      const ok = await firestoreProjects.updateProject(editingProject.value.id, {
+        name,
+        description: projectForm.value.description?.trim() || '',
+        color: projectForm.value.color,
+        status: projectForm.value.status
+      });
+      if (ok) {
+        closeProjectModal();
+        toast.add({ title: 'Projekt byl upraven', color: 'green' });
+      } else {
+        toast.add({ title: 'Nepodařilo se uložit změny', color: 'red' });
+      }
+    } else {
+      const id = await firestoreProjects.addProject({
+        name,
+        description: projectForm.value.description?.trim() || '',
+        color: projectForm.value.color,
+        status: projectForm.value.status
+      });
+      if (id) {
+        closeProjectModal();
+        toast.add({ title: 'Projekt byl vytvořen', color: 'green' });
+        router.push(`/projects/${id}`);
+      } else {
+        toast.add({ title: 'Nepodařilo se vytvořit projekt', color: 'red' });
+      }
     }
-    
-    // Vytvoření nového projektu přes Freelo API
-    console.log('[Dashboard] Creating project in Freelo:', projectForm.value.name);
-    const createdProject = await freeloProjects.createProject(
-      projectForm.value.name,
-      'CZK' // Defaultní měna
-    );
-    
-    console.log('[Dashboard] Project created successfully:', createdProject);
-    
-    // Projekty se automaticky načtou po vytvoření (v createProject se volá syncProjects)
-    closeProjectModal();
-    
-    // Zobrazit úspěšnou zprávu
-    alert(`Projekt "${projectForm.value.name}" byl úspěšně vytvořen ve Freelo!`);
   } catch (error: any) {
     console.error('[Dashboard] Error saving project:', error);
-    alert(error.message || 'Chyba při ukládání projektu. Zkuste to prosím znovu.');
+    toast.add({ title: error.message || 'Chyba při ukládání projektu', color: 'red' });
+  } finally {
+    isSaving.value = false;
   }
 }
 
@@ -440,170 +300,70 @@ function openProject(project: Project) {
 }
 
 async function archiveProject(projectId: string) {
-  const project = projectsStore.getProjectById(projectId);
-  if (!project) return;
-  
-  // Zkontrolovat, jestli je to Freelo projekt
-  const freeloId = (project as any).freeloId;
-  const match = project.id.match(/^freelo-(\d+)$/);
-  const cleanFreeloId = freeloId || (match ? parseInt(match[1]) : null);
-  
-  if (!cleanFreeloId) {
-    alert('Tento projekt není z Freelo, archivace není podporována.');
-    return;
-  }
-  
-  if (!confirm(`Opravdu chcete archivovat projekt "${project.name}"?`)) {
-    return;
-  }
-  
-  try {
-    await freeloProjects.archiveProject(cleanFreeloId);
-    alert(`Projekt "${project.name}" byl úspěšně archivován.`);
-  } catch (error: any) {
-    console.error('[Dashboard] Error archiving project:', error);
-    alert('Chyba při archivaci projektu: ' + (error.message || 'Neznámá chyba'));
+  if (!confirm('Opravdu chcete archivovat tento projekt?')) return;
+  const ok = await firestoreProjects.archiveProject(projectId);
+  if (ok) {
+    const toast = useToast();
+    toast.add({ title: 'Projekt byl archivován', color: 'green' });
+  } else {
+    alert('Nepodařilo se archivovat projekt.');
   }
 }
 
 async function unarchiveProject(projectId: string) {
-  const project = projectsStore.getProjectById(projectId);
-  if (!project) return;
-  
-  // Zkontrolovat, jestli je to Freelo projekt
-  const freeloId = (project as any).freeloId;
-  const match = project.id.match(/^freelo-(\d+)$/);
-  const cleanFreeloId = freeloId || (match ? parseInt(match[1]) : null);
-  
-  if (!cleanFreeloId) {
-    alert('Tento projekt není z Freelo, zrušení archivace není podporováno.');
-    return;
-  }
-  
-  if (!confirm(`Opravdu chcete obnovit projekt "${project.name}"?`)) {
-    return;
-  }
-  
-  try {
-    await freeloProjects.activateProject(cleanFreeloId);
-    alert(`Projekt "${project.name}" byl úspěšně obnoven.`);
-  } catch (error: any) {
-    console.error('[Dashboard] Error unarchiving project:', error);
-    alert('Chyba při obnovení projektu: ' + (error.message || 'Neznámá chyba'));
+  const ok = await firestoreProjects.unarchiveProject(projectId);
+  if (ok) {
+    const toast = useToast();
+    toast.add({ title: 'Projekt byl obnoven', color: 'green' });
+  } else {
+    alert('Nepodařilo se obnovit projekt.');
   }
 }
 
 async function deleteProject(projectId: string) {
   const project = projectsStore.getProjectById(projectId);
   if (!project) return;
-  
-  // Zkontrolovat, jestli je to Freelo projekt
-  const freeloId = (project as any).freeloId;
-  const match = project.id.match(/^freelo-(\d+)$/);
-  const cleanFreeloId = freeloId || (match ? parseInt(match[1]) : null);
-  
-  if (!cleanFreeloId) {
-    alert('Tento projekt není z Freelo, mazání není podporováno.');
-    return;
-  }
-  
-  if (!confirm(`Opravdu chcete smazat projekt "${project.name}"? Tato akce je nevratná.`)) {
-    return;
-  }
-  
-  try {
-    // Použít projectId (string formát "freelo-123") pro okamžité odstranění ze store
-    await freeloProjects.deleteProject(projectId);
-    
-    // Projekt je už odstraněn ze store v deleteProject funkci
-    // Pokud je to aktuální projekt, přesměrovat na dashboard
+  if (!confirm(`Opravdu chcete smazat projekt "${project.name}"? Tato akce je nevratná.`)) return;
+
+  const ok = await firestoreProjects.deleteProject(projectId);
+  if (ok) {
     if (projectsStore.currentProject?.id === projectId) {
       projectsStore.setCurrentProject(null);
-      // Pokud jsme na stránce projektu, přesměrovat na dashboard
       if (route.path.startsWith('/projects/')) {
         router.push('/');
       }
     }
-    
-    // Zobrazit úspěšnou zprávu (projekt už není v seznamu, takže UI se aktualizovalo)
     const toast = useToast();
-    toast.add({
-      title: 'Projekt byl úspěšně smazán',
-      color: 'green'
-    });
-  } catch (error: any) {
-    console.error('[Dashboard] Error deleting project:', error);
-    const errorMessage = error.message || 'Neznámá chyba';
-    
-    // Zkontrolovat, jestli chyba říká, že mazání není podporováno
-    if (errorMessage.includes('dostupné pouze') || errorMessage.includes('not supported') || errorMessage.includes('not available')) {
-      alert('Mazání projektů je dostupné pouze přímo ve Freelo aplikaci. Prosím smažte projekt na https://app.freelo.io');
-    } else {
-      alert('Chyba při mazání projektu: ' + errorMessage);
-    }
+    toast.add({ title: 'Projekt byl smazán', color: 'green' });
+  } else {
+    alert('Nepodařilo se smazat projekt.');
   }
 }
 
-// Lifecycle
-onMounted(async () => {
-  console.log('[Dashboard] Component mounted, auth status:', unref(auth.isAuthenticated));
-  console.log('[Dashboard] User:', auth.user.value?.email);
-  console.log('[Dashboard] Cached projects:', projectsStore.projects.length);
-  
+onMounted(() => {
   if (auth.isAuthenticated && auth.user.value) {
-    console.log('[Dashboard] Loading projects from Freelo API');
-    try {
-      await freeloProjects.syncProjects();
-    } catch (error: any) {
-      console.error('[Dashboard] Error loading projects:', error);
-      alert('Chyba při načítání projektů: ' + (error.message || 'Neznámá chyba'));
-    }
-  } else {
-    console.warn('[Dashboard] Not authenticated on mount, waiting for auth state');
+    firestoreProjects.startListening();
   }
 });
 
-// Watch for authentication changes
-watch(() => auth.isAuthenticated, (isAuth, wasAuth) => {
-  console.log('[Dashboard] Auth changed:', { wasAuth, isAuth, userEmail: auth.user.value?.email });
+watch(() => auth.isAuthenticated, (isAuth) => {
   if (isAuth && auth.user.value) {
-    console.log('[Dashboard] User logged in, loading projects');
-    nextTick(async () => {
-      try {
-        await freeloProjects.syncProjects();
-      } catch (error: any) {
-        console.error('[Dashboard] Error loading projects after login:', error);
-        alert('Chyba při načítání projektů: ' + (error.message || 'Neznámá chyba'));
-      }
-    });
+    firestoreProjects.startListening();
   } else {
-    console.log('[Dashboard] User logged out, clearing projects');
+    firestoreProjects.stopListening();
     projectsStore.clearProjects();
   }
 });
 
-// Watch for user changes (different user logs in)
-watch(() => auth.user.value?.email, (newEmail, oldEmail) => {
-  console.log('[Dashboard] User email changed:', { oldEmail, newEmail });
-  if (oldEmail && newEmail && oldEmail !== newEmail) {
-    console.log('[Dashboard] Different user detected, switching context');
-    // Different user logged in - clear old projects and reload
+watch(() => auth.user.value?.uid, (newUid, oldUid) => {
+  if (oldUid && newUid && oldUid !== newUid) {
     projectsStore.clearProjects();
-    nextTick(async () => {
-      try {
-        await freeloProjects.syncProjects();
-      } catch (error: any) {
-        console.error('[Dashboard] Error loading projects for new user:', error);
-        alert('Chyba při načítání projektů: ' + (error.message || 'Neznámá chyba'));
-      }
-    });
+    firestoreProjects.startListening();
   }
 });
 
-// Watch for authentication - otevřít modal pro vytvoření projektu po přihlášení
 watch(() => auth.isAuthenticated, (isAuth) => {
   if (isAuth && pendingProjectCreation.value) {
-    // Uživatel se přihlásil a chtěl vytvořit projekt
     pendingProjectCreation.value = false;
     showAuthModal.value = false;
     nextTick(() => {
@@ -618,4 +378,3 @@ watch(() => auth.isAuthenticated, (isAuth) => {
   min-height: 100vh;
 }
 </style>
-

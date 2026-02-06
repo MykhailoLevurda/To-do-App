@@ -63,11 +63,11 @@ export default defineEventHandler(async (event) => {
     // Např. SendGrid, Mailgun, AWS SES, Resend atd.
     // Pro demo účely pouze logujeme a simulujeme úspěšné odeslání
     
-    const emailSubject = `Pozvánka do týmu - ${invitedByName || 'Freelo'}`;
+    const emailSubject = `Pozvánka do týmu - ${invitedByName || 'Scrum Board'}`;
     const emailBody = `
 Pozvánka do týmu
 
-${invitedByName || 'Někdo'} vás pozval/a do týmu na Freelo Dashboard.
+${invitedByName || 'Někdo'} vás pozval/a do týmu na Scrum Board.
 
 Klikněte na odkaz pro připojení:
 ${inviteLink}

@@ -123,7 +123,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean];
 }>();
 
-const auth = useFreeloAuth();
+const auth = useAuth();
 const isOpen = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value)
