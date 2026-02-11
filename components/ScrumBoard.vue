@@ -4,6 +4,8 @@
     <TaskDetailPanel
       :task="selectedTask"
       :is-open="!!selectedTask"
+      :completed-status-id="completedColumn?.id ?? 'done'"
+      :first-status-id="workColumns[0]?.id ?? 'todo'"
       @close="selectedTask = null"
       @edit="editTask"
       @delete="deleteTask"
@@ -41,22 +43,8 @@
         </UCard>
         <UCard>
           <div class="text-center">
-            <div class="text-2xl font-bold text-yellow-600">{{ tasksByStatus('in-progress').length }}</div>
-            <div class="text-sm text-gray-500">Rozpracované</div>
-          </div>
-        </UCard>
-        <UCard>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-green-600">{{ tasksByStatus('done').length }}</div>
-            <div class="text-sm text-gray-500">Dokončené</div>
-          </div>
-        </UCard>
-        <UCard>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-gray-600">
-              {{ Math.round((tasksByStatus('done').length / Math.max(projectTasks.length, 1)) * 100) }}%
-            </div>
-            <div class="text-sm text-gray-500">Postup</div>
+            <div class="text-2xl font-bold text-gray-600">{{ columns.length }}</div>
+            <div class="text-sm text-gray-500">Stavů</div>
           </div>
         </UCard>
       </div>
@@ -69,54 +57,110 @@
       </div>
     </div>
 
-    <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div v-else-if="columns.length" class="flex gap-6 overflow-x-auto">
+      <!-- Pracovní sloupce -->
+      <div class="grid gap-6 flex-1 min-w-0" :class="columnsGridClass">
+        <div
+          v-for="column in workColumns"
+          :key="column.id"
+          class="column min-w-[280px]"
+        >
+          <UCard class="h-full">
+            <template #header>
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div
+                    class="w-3 h-3 rounded-full flex-shrink-0"
+                    :style="{ backgroundColor: column.color || '#9ca3af' }"
+                  />
+                  <h3 class="font-semibold">{{ column.title }}</h3>
+                  <UBadge color="neutral" variant="soft">
+                    {{ tasksByStatus(column.id).length }}
+                  </UBadge>
+                </div>
+              </div>
+            </template>
+
+            <div
+              class="space-y-3 min-h-[400px] drop-zone"
+              @drop="handleDrop($event, column.id)"
+              @dragover.prevent="handleDragOver($event)"
+              @dragenter.prevent="handleDragEnter($event)"
+              @dragleave="handleDragLeave($event)"
+            >
+              <TaskCard
+                v-for="task in tasksByStatus(column.id)"
+                :key="task.id"
+                :task="task"
+                @select="selectedTask = $event"
+                @edit="editTask"
+                @delete="deleteTask"
+                @move="moveTask"
+              />
+              <div
+                v-if="tasksByStatus(column.id).length === 0"
+                class="text-center text-gray-500 dark:text-gray-400 py-8"
+              >
+                <div class="i-heroicons-clipboard-document-list w-12 h-12 mx-auto mb-2 text-gray-400 dark:text-gray-300" />
+                <p>Žádné úkoly</p>
+              </div>
+            </div>
+          </UCard>
+        </div>
+      </div>
+
+      <!-- Hotové úkoly – vpravo, šedé pozadí, přeškrtnuté -->
       <div
-        v-for="column in scrumBoard.columns"
-        :key="column.id"
-        class="column"
+        v-if="completedColumn"
+        class="column min-w-[280px] max-w-[320px] flex-shrink-0"
       >
-        <UCard class="h-full">
+        <UCard class="h-full bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700">
           <template #header>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <div
-                  class="w-3 h-3 rounded-full"
-                  :class="`bg-${column.color}-500`"
+                  class="w-3 h-3 rounded-full flex-shrink-0 opacity-70"
+                  :style="{ backgroundColor: completedColumn.color || '#9ca3af' }"
                 />
-                <h3 class="font-semibold">{{ column.title }}</h3>
-                <UBadge :color="column.color" variant="soft">
-                  {{ tasksByStatus(column.status).length }}
+                <h3 class="font-semibold text-gray-600 dark:text-gray-400">{{ completedColumn.title }}</h3>
+                <UBadge color="neutral" variant="soft">
+                  {{ tasksByStatus(completedColumn.id).length }}
                 </UBadge>
               </div>
             </div>
           </template>
 
           <div
-            class="space-y-3 min-h-[400px] drop-zone"
-            @drop="handleDrop($event, column.status)"
+            class="space-y-3 min-h-[400px] drop-zone completed-column"
+            @drop="handleDrop($event, completedColumn.id)"
             @dragover.prevent="handleDragOver($event)"
             @dragenter.prevent="handleDragEnter($event)"
             @dragleave="handleDragLeave($event)"
           >
             <TaskCard
-              v-for="task in tasksByStatus(column.status)"
+              v-for="task in tasksByStatus(completedColumn.id)"
               :key="task.id"
               :task="task"
+              :completed="true"
               @select="selectedTask = $event"
               @edit="editTask"
               @delete="deleteTask"
               @move="moveTask"
             />
             <div
-              v-if="tasksByStatus(column.status).length === 0"
+              v-if="tasksByStatus(completedColumn.id).length === 0"
               class="text-center text-gray-500 dark:text-gray-400 py-8"
             >
-              <div class="i-heroicons-clipboard-document-list w-12 h-12 mx-auto mb-2 text-gray-400 dark:text-gray-300" />
-              <p>Žádné úkoly</p>
+              <div class="i-heroicons-check-circle w-12 h-12 mx-auto mb-2 text-gray-400 dark:text-gray-300" />
+              <p>Žádné hotové úkoly</p>
             </div>
           </div>
         </UCard>
       </div>
+    </div>
+    <div v-else class="text-center py-12 text-gray-500">
+      <p>Projekt nemá žádné stavy úkolů.</p>
+      <p class="text-sm mt-1">Upravte projekt a přidejte stavy (sloupce) v sekci „Stavy úkolů“.</p>
     </div>
 
     <!-- Add Task Modal -->
@@ -153,6 +197,14 @@
               />
             </UFormGroup>
           </div>
+
+          <UFormGroup v-if="statusOptions.length" label="Stav">
+            <USelect
+              v-model="newTask.status"
+              :options="statusOptions"
+              placeholder="Vyberte stav"
+            />
+          </UFormGroup>
 
           <UFormGroup label="Řešitel">
             <UInput
@@ -206,7 +258,7 @@
                 :options="priorityOptions"
               />
             </UFormGroup>
-            <UFormGroup label="Stav">
+            <UFormGroup v-if="statusOptions.length" label="Stav">
               <USelect
                 v-model="editingTask.status"
                 :options="statusOptions"
@@ -239,21 +291,48 @@
 
 <script setup lang="ts">
 import type { TaskItem } from '~/stores/todos';
+import type { ProjectStatus } from '~/types';
+import { DEFAULT_PROJECT_STATUSES } from '~/composables/useFirestoreProjects';
 
 const props = defineProps<{
   projectId: string;
 }>();
 
+const projectsStore = useProjectsStore();
 const scrumBoard = useScrumBoardStore();
 const auth = useAuth();
 const firestoreTasks = useFirestoreTasks();
+
+const currentProject = computed(() => projectsStore.getProjectById(props.projectId));
+
+const columns = computed((): ProjectStatus[] => {
+  const p = currentProject.value;
+  if (!p?.statuses || p.statuses.length === 0) return DEFAULT_PROJECT_STATUSES;
+  return p.statuses;
+});
+
+/** Pracovní sloupce (všechny kromě posledního) */
+const workColumns = computed(() => {
+  const cols = columns.value;
+  if (cols.length <= 1) return cols;
+  return cols.slice(0, -1);
+});
+
+/** Poslední sloupec = hotové úkoly (zobrazí se vpravo zvlášť) */
+const completedColumn = computed(() => {
+  const cols = columns.value;
+  if (cols.length < 2) return null;
+  return cols[cols.length - 1];
+});
+
+const columnsGridClass = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4';
 
 const projectTasks = computed(() => {
   return scrumBoard.tasks.filter(task => task.projectId === props.projectId);
 });
 
-const tasksByStatus = (status: 'todo' | 'in-progress' | 'done') => {
-  return projectTasks.value.filter(task => task.status === status);
+const tasksByStatus = (statusId: string) => {
+  return projectTasks.value.filter(task => task.status === statusId);
 };
 
 const showAddTaskModal = ref(false);
@@ -268,7 +347,7 @@ const newTask = ref({
   priority: 'medium' as 'low' | 'medium' | 'high',
   assignee: '',
   storyPoints: 0,
-  status: 'todo' as 'todo' | 'in-progress' | 'done',
+  status: '', // vyplníme při otevření modalu z prvního sloupce
   dueDate: ''
 });
 
@@ -278,11 +357,9 @@ const priorityOptions = [
   { label: 'Vysoká', value: 'high' }
 ];
 
-const statusOptions = [
-  { label: 'To Do', value: 'todo' },
-  { label: 'Rozpracováno', value: 'in-progress' },
-  { label: 'Hotovo', value: 'done' }
-];
+const statusOptions = computed(() =>
+  columns.value.map(col => ({ label: col.title, value: col.id }))
+);
 
 const currentUserDisplayName = computed(() => {
   if (!auth.user.value) return null;
@@ -293,6 +370,7 @@ function openAddTaskModal() {
   if (auth.user.value) {
     newTask.value.assignee = auth.user.value.displayName || auth.user.value.email || '';
   }
+  newTask.value.status = columns.value[0]?.id ?? '';
   showAddTaskModal.value = true;
 }
 
@@ -309,13 +387,19 @@ async function addTask() {
   const toast = useToast();
 
   try {
+    const statusId = newTask.value.status || columns.value[0]?.id;
+    if (!statusId) {
+      toast.add({ title: 'Projekt nemá žádné stavy. Nejdřív upravte projekt a přidejte stavy.', color: 'red' });
+      isAddingTask.value = false;
+      return;
+    }
     const id = await firestoreTasks.addTask({
       title,
       description: newTask.value.description?.trim(),
       priority: newTask.value.priority,
       assignee: newTask.value.assignee?.trim(),
       storyPoints: newTask.value.storyPoints ?? 0,
-      status: 'todo',
+      status: statusId,
       projectId: props.projectId,
       dueDate: newTask.value.dueDate ? new Date(newTask.value.dueDate) : undefined
     });
@@ -326,7 +410,7 @@ async function addTask() {
         priority: 'medium',
         assignee: '',
         storyPoints: 0,
-        status: 'todo',
+        status: columns.value[0]?.id ?? '',
         dueDate: ''
       };
       showAddTaskModal.value = false;
@@ -388,8 +472,10 @@ async function deleteTask(taskId: string) {
 }
 
 async function moveTask(taskId: string, newStatus: string) {
-  const ok = await firestoreTasks.updateTaskStatus(taskId, newStatus as 'todo' | 'in-progress' | 'done');
-  if (!ok) {
+  const ok = await firestoreTasks.updateTaskStatus(taskId, newStatus);
+  if (ok) {
+    scrumBoard.updateTaskStatus(taskId, newStatus);
+  } else {
     alert('Nepodařilo se změnit stav úkolu.');
   }
 }
@@ -429,11 +515,11 @@ async function handleDrop(event: DragEvent, targetStatus: string) {
   if (task.status === targetStatus) return;
 
   const originalStatus = task.status;
-  scrumBoard.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
+  scrumBoard.updateTaskStatus(taskId, targetStatus);
 
-  const ok = await firestoreTasks.updateTaskStatus(taskId, targetStatus as 'todo' | 'in-progress' | 'done');
+  const ok = await firestoreTasks.updateTaskStatus(taskId, targetStatus);
   if (!ok) {
-    scrumBoard.updateTaskStatus(taskId, originalStatus as 'todo' | 'in-progress' | 'done');
+    scrumBoard.updateTaskStatus(taskId, originalStatus);
     alert('Nepodařilo se změnit stav úkolu.');
   }
 }

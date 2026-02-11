@@ -4,25 +4,20 @@ export interface TaskItem {
   id: string;
   title: string;
   description?: string;
-  status: 'todo' | 'in-progress' | 'done';
+  /** Id stavu z project.statuses (nebo 'todo'|'in-progress'|'done' pro zpětnou kompatibilitu) */
+  status: string;
   priority: 'low' | 'medium' | 'high';
-  assignee?: string; // Jméno řešitele (pro zobrazení)
+  assignee?: string;
   storyPoints?: number;
   projectId: string;
   dueDate?: Date;
   createdAt: Date;
   updatedAt: Date;
-  approved?: boolean; // Pro schválení dokončených úkolů
+  approved?: boolean;
 }
 
 export interface ScrumBoardState {
   tasks: TaskItem[];
-  columns: {
-    id: string;
-    title: string;
-    status: 'todo' | 'in-progress' | 'done';
-    color: string;
-  }[];
   isLoading: boolean;
   currentUserId: string | null;
 }
@@ -30,17 +25,12 @@ export interface ScrumBoardState {
 export const useScrumBoardStore = defineStore("scrumBoard", {
   state: (): ScrumBoardState => ({
     tasks: [],
-    columns: [
-      { id: 'todo', title: 'To Do', status: 'todo', color: 'blue' },
-      { id: 'in-progress', title: 'In Progress', status: 'in-progress', color: 'yellow' },
-      { id: 'done', title: 'Done', status: 'done', color: 'green' }
-    ],
     isLoading: false,
     currentUserId: null
   }),
   getters: {
-    tasksByStatus: (state) => (status: 'todo' | 'in-progress' | 'done') => 
-      state.tasks.filter(task => task.status === status),
+    tasksByStatus: (state) => (statusId: string) =>
+      state.tasks.filter(task => task.status === statusId),
     totalTasks: (state) => state.tasks.length,
     completedTasks: (state) => state.tasks.filter(task => task.status === 'done').length,
     inProgressTasks: (state) => state.tasks.filter(task => task.status === 'in-progress').length
@@ -55,7 +45,7 @@ export const useScrumBoardStore = defineStore("scrumBoard", {
       };
       this.tasks.unshift(newTask);
     },
-    updateTaskStatus(taskId: string, newStatus: 'todo' | 'in-progress' | 'done') {
+    updateTaskStatus(taskId: string, newStatus: string) {
       const task = this.tasks.find(t => t.id === taskId);
       if (task) {
         task.status = newStatus;
@@ -72,8 +62,8 @@ export const useScrumBoardStore = defineStore("scrumBoard", {
     removeTask(taskId: string) {
       this.tasks = this.tasks.filter(t => t.id !== taskId);
     },
-    moveTask(taskId: string, fromStatus: string, toStatus: string) {
-      this.updateTaskStatus(taskId, toStatus as 'todo' | 'in-progress' | 'done');
+    moveTask(taskId: string, _fromStatus: string, toStatus: string) {
+      this.updateTask(taskId, { status: toStatus });
     },
     clearTasks() {
       this.tasks = [];

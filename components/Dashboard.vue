@@ -197,11 +197,16 @@ const editingProject = ref<Project | null>(null);
 const pendingProjectCreation = ref(false);
 const isSaving = ref(false);
 
-const projectForm = ref({
+const projectForm = ref<{
+  name: string;
+  description: string;
+  color: string;
+  status: 'active' | 'archived';
+}>({
   name: '',
   description: '',
   color: '#3b82f6',
-  status: 'active' as 'active' | 'archived'
+  status: 'active'
 });
 
 const availableColors = [

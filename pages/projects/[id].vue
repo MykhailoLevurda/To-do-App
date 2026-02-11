@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { FolderIcon } from '@heroicons/vue/24/solid';
+import type { ProjectStatus } from '~/types';
 
 const route = useRoute();
 const router = useRouter();
@@ -16,7 +17,16 @@ const currentProject = computed(() => {
 const showDeleteModal = ref(false);
 const isDeleting = ref(false);
 const showEditModal = ref(false);
+const showStatusesModal = ref(false);
 const editForm = ref({ name: '', description: '', color: '#3b82f6' });
+
+const statusColors = ['#3b82f6', '#eab308', '#22c55e', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+
+function generateStatusId() {
+  return `s-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+const statusesForm = ref<ProjectStatus[]>([]);
 
 function openEditModal() {
   if (!currentProject.value) return;
@@ -26,6 +36,54 @@ function openEditModal() {
     color: currentProject.value.color
   };
   showEditModal.value = true;
+}
+
+function openStatusesModal() {
+  if (!currentProject.value) return;
+  statusesForm.value = (currentProject.value.statuses && currentProject.value.statuses.length > 0)
+    ? currentProject.value.statuses.map((s, i) => ({ ...s, order: i }))
+    : [];
+  showStatusesModal.value = true;
+}
+
+function addStatus() {
+  const order = statusesForm.value.length;
+  statusesForm.value.push({
+    id: generateStatusId(),
+    title: '',
+    color: statusColors[order % statusColors.length],
+    order
+  });
+}
+
+function removeStatus(index: number) {
+  statusesForm.value.splice(index, 1);
+}
+
+function moveStatusUp(index: number) {
+  if (index <= 0) return;
+  const arr = statusesForm.value;
+  [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+}
+
+function moveStatusDown(index: number) {
+  if (index >= statusesForm.value.length - 1) return;
+  const arr = statusesForm.value;
+  [arr[index], arr[index + 1]] = [arr[index + 1], arr[index]];
+}
+
+async function saveStatuses() {
+  if (!currentProject.value) return;
+  const statuses = statusesForm.value
+    .filter(s => s.title?.trim())
+    .map((s, i) => ({ ...s, title: s.title.trim(), order: i }));
+  const ok = await firestoreProjects.updateProject(currentProject.value.id, { statuses });
+  if (ok) {
+    showStatusesModal.value = false;
+    useToast().add({ title: 'Stavy byly uloženy', color: 'green' });
+  } else {
+    useToast().add({ title: 'Nepodařilo se uložit stavy', color: 'red' });
+  }
 }
 
 async function saveEdit() {
@@ -96,6 +154,14 @@ watch(currentProject, (project) => {
         </div>
         <div class="flex items-center gap-2">
           <UButton
+            icon="i-heroicons-squares-2x2"
+            variant="outline"
+            @click="openStatusesModal"
+            title="Správa stavů úkolů"
+          >
+            Stavy
+          </UButton>
+          <UButton
             icon="i-heroicons-pencil"
             variant="outline"
             @click="openEditModal"
@@ -153,6 +219,75 @@ watch(currentProject, (project) => {
         <div class="flex justify-end gap-2">
           <UButton variant="ghost" @click="showEditModal = false">Zrušit</UButton>
           <UButton @click="saveEdit">Uložit</UButton>
+        </div>
+      </template>
+    </UCard>
+  </UModal>
+
+  <!-- Správa stavů modal -->
+  <UModal v-model="showStatusesModal">
+    <UCard>
+      <template #header>
+        <h3 class="text-lg font-semibold">Stavy úkolů</h3>
+        <p class="text-sm text-gray-500 mt-1">Pořadí sloupců na boardu: první stav = vlevo, poslední = vpravo. Přesouvejte šipkami.</p>
+      </template>
+      <div class="space-y-3">
+        <div
+          v-for="(st, idx) in statusesForm"
+          :key="st.id"
+          class="flex items-center gap-2"
+        >
+          <div class="flex flex-col gap-0.5 shrink-0">
+            <UButton
+              icon="i-heroicons-chevron-up"
+              size="xs"
+              variant="ghost"
+              color="gray"
+              aria-label="Posunout vlevo"
+              :disabled="idx === 0"
+              @click="moveStatusUp(idx)"
+            />
+            <UButton
+              icon="i-heroicons-chevron-down"
+              size="xs"
+              variant="ghost"
+              color="gray"
+              aria-label="Posunout vpravo"
+              :disabled="idx === statusesForm.length - 1"
+              @click="moveStatusDown(idx)"
+            />
+          </div>
+          <div
+            class="w-8 h-8 rounded flex-shrink-0 border border-gray-300 dark:border-gray-600"
+            :style="{ backgroundColor: st.color || '#9ca3af' }"
+          />
+          <UInput
+            v-model="st.title"
+            placeholder="Název stavu (např. To Do, Hotovo)"
+            class="flex-1 min-w-0"
+          />
+          <UButton
+            icon="i-heroicons-trash"
+            size="sm"
+            variant="ghost"
+            color="red"
+            aria-label="Odebrat stav"
+            @click="removeStatus(idx)"
+          />
+        </div>
+        <UButton
+          icon="i-heroicons-plus"
+          variant="soft"
+          block
+          @click="addStatus"
+        >
+          Přidat stav
+        </UButton>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton variant="ghost" @click="showStatusesModal = false">Zrušit</UButton>
+          <UButton @click="saveStatuses">Uložit stavy</UButton>
         </div>
       </template>
     </UCard>

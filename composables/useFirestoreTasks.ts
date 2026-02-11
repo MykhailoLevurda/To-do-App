@@ -139,7 +139,7 @@ export const useFirestoreTasks = () => {
     }
   };
 
-  const updateTaskStatus = async (taskId: string, status: 'todo' | 'in-progress' | 'done') => {
+  const updateTaskStatus = async (taskId: string, status: string) => {
     return await updateTask(taskId, { status });
   };
 
@@ -236,7 +236,7 @@ export const useFirestoreTasks = () => {
   const addComment = async (taskId: string, text: string) => {
     if (!auth.user.value) return null;
 
-    const author = auth.user.value.email || auth.user.value.displayName || 'Neznámý';
+    const author = auth.user.value.displayName || auth.user.value.email || 'Neznámý';
 
     try {
       const ref = collection(firestore, 'tasks', taskId, 'comments');

@@ -11,7 +11,14 @@ import {
   where,
   type Unsubscribe
 } from 'firebase/firestore';
-import type { Project } from '~/types';
+import type { Project, ProjectStatus } from '~/types';
+
+/** Výchozí stavy pro projekty bez vlastních statuses (zpětná kompatibilita) */
+export const DEFAULT_PROJECT_STATUSES: ProjectStatus[] = [
+  { id: 'todo', title: 'To Do', color: 'blue', order: 0 },
+  { id: 'in-progress', title: 'In Progress', color: 'yellow', order: 1 },
+  { id: 'done', title: 'Done', color: 'green', order: 2 }
+];
 
 export const useFirestoreProjects = () => {
   const { $firestore } = useNuxtApp();
@@ -94,7 +101,6 @@ export const useFirestoreProjects = () => {
       snapshot.forEach((doc) => {
         const data = doc.data();
         
-        // Parse teamMembers array
         const teamMembers = (data.teamMembers || []).map((member: any) => ({
           userId: member.userId,
           email: member.email,
@@ -102,7 +108,17 @@ export const useFirestoreProjects = () => {
           addedAt: member.addedAt?.toDate() || new Date(),
           addedBy: member.addedBy
         }));
-        
+
+        const rawStatuses = (data.statuses || []) as ProjectStatus[];
+        const statuses = rawStatuses.length > 0
+          ? rawStatuses.map((s: any) => ({
+              id: s.id,
+              title: s.title,
+              color: s.color ?? 'gray',
+              order: typeof s.order === 'number' ? s.order : 0
+            })).sort((a, b) => a.order - b.order)
+          : [...DEFAULT_PROJECT_STATUSES];
+
         projects.push({
           id: doc.id,
           name: data.name,
@@ -112,6 +128,7 @@ export const useFirestoreProjects = () => {
           status: data.status || 'active',
           taskCount: data.taskCount || 0,
           teamMembers,
+          statuses,
           createdAt: data.createdAt?.toDate() || new Date(),
           updatedAt: data.updatedAt?.toDate() || new Date()
         });
@@ -140,6 +157,7 @@ export const useFirestoreProjects = () => {
                 ...m,
                 addedAt: m.addedAt.toISOString()
               })),
+              statuses: p.statuses,
               createdAt: p.createdAt.toISOString(),
               updatedAt: p.updatedAt.toISOString()
             })),
@@ -174,11 +192,15 @@ export const useFirestoreProjects = () => {
     try {
       const projectsRef = collection(firestore, 'projects');
       const createdBy = auth.user.value.uid;
+      const statuses = (project.statuses && project.statuses.length > 0)
+        ? project.statuses
+        : [];
       const docRef = await addDoc(projectsRef, {
         ...project,
         createdBy,
         taskCount: 0,
         teamMembers: project.teamMembers ?? [],
+        statuses,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });

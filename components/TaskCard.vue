@@ -1,7 +1,11 @@
 <template>
   <UCard
     class="task-card cursor-pointer hover:shadow-md transition-shadow"
-    :class="[priorityClass, task.approved ? 'opacity-60 grayscale' : '']"
+    :class="[
+      priorityClass,
+      task.approved ? 'opacity-60 grayscale' : '',
+      completed ? 'task-card--completed' : ''
+    ]"
     @click="emit('select', task)"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
@@ -52,7 +56,10 @@
 import type { TaskItem } from '~/stores/todos';
 import { UserIcon, ChartBarIcon } from '@heroicons/vue/24/solid';
 
-const props = defineProps<{ task: TaskItem }>();
+const props = withDefaults(
+  defineProps<{ task: TaskItem; completed?: boolean }>(),
+  { completed: false }
+);
 
 const emit = defineEmits<{
   select: [task: TaskItem];
@@ -138,6 +145,17 @@ function handleDragEnd(e: DragEvent) {
 
 <style scoped>
 .task-card { min-height: 120px; }
+.task-card--completed {
+  background-color: #f3f4f6 !important;
+  text-decoration: line-through;
+}
+:deep(.task-card--completed),
+.task-card--completed :deep(*) {
+  text-decoration: line-through;
+}
+.dark .task-card--completed {
+  background-color: #374151 !important;
+}
 .deadline-bar-red { background-color: #ef4444 !important; }
 .deadline-bar-yellow { background-color: #eab308 !important; }
 .deadline-bar-blue { background-color: #3b82f6 !important; }

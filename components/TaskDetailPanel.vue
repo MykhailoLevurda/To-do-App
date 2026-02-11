@@ -73,11 +73,43 @@
               :key="c.id"
               class="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/80 text-sm"
             >
-              <div class="flex justify-between items-center gap-2 mb-1">
+              <div class="flex justify-between items-center gap-2 mb-1 flex-wrap">
                 <span class="font-medium text-gray-700 dark:text-gray-300">{{ c.author }}</span>
-                <span class="text-xs text-gray-500">{{ formatCommentDate(c.createdAt) }}</span>
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-gray-500">{{ formatCommentDate(c.createdAt) }}</span>
+                  <template v-if="canEditComment(c)">
+                    <UButton
+                      icon="i-heroicons-pencil"
+                      size="xs"
+                      variant="ghost"
+                      color="gray"
+                      aria-label="Upravit"
+                      @click="startEditComment(c)"
+                    />
+                    <UButton
+                      icon="i-heroicons-trash"
+                      size="xs"
+                      variant="ghost"
+                      color="red"
+                      aria-label="Smazat"
+                      @click="confirmDeleteComment(c)"
+                    />
+                  </template>
+                </div>
               </div>
-              <p class="whitespace-pre-wrap text-gray-600 dark:text-gray-400">{{ c.text }}</p>
+              <template v-if="editingCommentId === c.id">
+                <textarea
+                  v-model="editingCommentText"
+                  rows="3"
+                  class="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 mb-2"
+                  placeholder="Text komentáře..."
+                />
+                <div class="flex gap-2">
+                  <UButton size="xs" @click="saveEditComment">Uložit</UButton>
+                  <UButton size="xs" variant="ghost" @click="cancelEditComment">Zrušit</UButton>
+                </div>
+              </template>
+              <p v-else class="whitespace-pre-wrap text-gray-600 dark:text-gray-400">{{ c.text }}</p>
             </div>
           </div>
 
@@ -107,7 +139,7 @@
       <!-- Akce dole -->
       <div class="p-4 border-t border-gray-200 dark:border-gray-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div class="flex items-center gap-1 text-sm text-gray-500">
-          <template v-if="task.status === 'done'">
+          <template v-if="isCompleted">
             <span v-if="task.approved" class="flex items-center gap-1 text-green-600">
               <span class="i-heroicons-check-circle w-4 h-4" /> Schváleno
             </span>
@@ -118,7 +150,7 @@
         </div>
         <div class="flex flex-wrap gap-2">
           <UButton
-            v-if="task.status === 'done' && !task.approved"
+            v-if="isCompleted && !task.approved"
             icon="i-heroicons-check-circle"
             color="green"
             size="sm"
@@ -127,13 +159,13 @@
             Schválit
           </UButton>
           <UButton
-            :icon="task.status === 'done' ? 'i-heroicons-arrow-path' : 'i-heroicons-check-circle'"
-            :color="task.status === 'done' ? 'neutral' : 'green'"
+            :icon="isCompleted ? 'i-heroicons-arrow-path' : 'i-heroicons-check-circle'"
+            :color="isCompleted ? 'neutral' : 'green'"
             size="sm"
             variant="soft"
             @click="toggleTaskStatus"
           >
-            {{ task.status === 'done' ? 'Otevřít' : 'Zavřít' }}
+            {{ isCompleted ? 'Otevřít' : 'Hotovo' }}
           </UButton>
           <UButton icon="i-heroicons-pencil" size="sm" variant="soft" @click="editTask">
             Upravit
@@ -154,6 +186,10 @@ import type { TaskItem } from '~/stores/todos';
 const props = defineProps<{
   task: TaskItem | null;
   isOpen: boolean;
+  /** Id stavu „Hotovo“ (poslední sloupec) – pro tlačítko Hotovo a zobrazení schválení */
+  completedStatusId?: string;
+  /** Id prvního pracovního stavu – pro tlačítko Otevřít */
+  firstStatusId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -169,8 +205,15 @@ const scrumBoard = useScrumBoardStore();
 
 const newComment = ref('');
 const isSubmittingComment = ref(false);
+const editingCommentId = ref<string | null>(null);
+const editingCommentText = ref('');
 
 const task = computed(() => props.task);
+
+const completedStatusId = computed(() => props.completedStatusId ?? 'done');
+const firstStatusId = computed(() => props.firstStatusId ?? 'todo');
+
+const isCompleted = computed(() => task.value?.status === completedStatusId.value);
 
 const comments = computed(() => {
   if (!task.value) return [];
@@ -180,9 +223,47 @@ const comments = computed(() => {
     id: c.id,
     text: c.text,
     author: c.author || 'Neznámý',
+    userId: c.userId,
     createdAt: c.createdAt?.toDate?.() ?? c.createdAt
   }));
 });
+
+function canEditComment(c: { userId?: string }) {
+  return auth.user.value && c.userId === auth.user.value?.uid;
+}
+
+function startEditComment(c: { id: string; text: string }) {
+  editingCommentId.value = c.id;
+  editingCommentText.value = c.text;
+}
+
+function cancelEditComment() {
+  editingCommentId.value = null;
+  editingCommentText.value = '';
+}
+
+async function saveEditComment() {
+  if (!task.value || !editingCommentId.value) return;
+  const text = editingCommentText.value?.trim();
+  if (!text) return;
+  const ok = await firestoreTasks.updateComment(task.value.id, editingCommentId.value, text);
+  if (ok) {
+    cancelEditComment();
+  } else {
+    useToast().add({ title: 'Nepodařilo se uložit úpravu', color: 'red' });
+  }
+}
+
+async function confirmDeleteComment(c: { id: string; text: string }) {
+  if (!task.value) return;
+  if (!confirm('Opravdu smazat tento komentář?')) return;
+  const ok = await firestoreTasks.deleteComment(task.value.id, c.id);
+  if (ok) {
+    if (editingCommentId.value === c.id) cancelEditComment();
+  } else {
+    useToast().add({ title: 'Nepodařilo se smazat komentář', color: 'red' });
+  }
+}
 
 const commentsLoading = ref(false);
 
@@ -276,7 +357,7 @@ async function approveTask() {
 
 async function toggleTaskStatus() {
   if (!task.value || !auth.isAuthenticated) return;
-  const newStatus = task.value.status === 'done' ? 'todo' : 'done';
+  const newStatus = isCompleted.value ? firstStatusId.value : completedStatusId.value;
   const ok = await firestoreTasks.updateTaskStatus(task.value.id, newStatus);
   if (ok) {
     emit('move', task.value.id, newStatus);
