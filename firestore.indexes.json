@@ -4,19 +4,22 @@
       "collectionGroup": "tasks",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "createdBy",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        },
-        {
-          "fieldPath": "__name__",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "createdBy", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
       ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "userProjectTime",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "projectId", "order": "ASCENDING" }],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "userProjectTime",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "userId", "order": "ASCENDING" }],
       "density": "SPARSE_ALL"
     }
   ],

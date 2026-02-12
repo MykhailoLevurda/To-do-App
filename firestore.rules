@@ -39,6 +39,20 @@ service cloud.firestore {
         && (resource.data.createdBy == request.auth.uid
             || request.auth.token.admin == true);
     }
+
+    // Čas strávený uživatelem u projektu (timer) – vlastní záznamy; majitel projektu vidí aktivitu všech v projektu
+    match /userProjectTime/{docId} {
+      allow read: if request.auth != null
+        && (resource == null
+            || resource.data.userId == request.auth.uid
+            || (resource.data.keys().hasAny(['projectId'])
+                && exists(/databases/$(database)/documents/projects/$(resource.data.projectId))
+                && get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.createdBy == request.auth.uid));
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+    }
     
     // Catch-all pravidlo - pouze pro ostatní kolekce
     match /{document=**} {
