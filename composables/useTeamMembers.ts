@@ -9,7 +9,18 @@ import {
   where,
   getDocs
 } from 'firebase/firestore';
-import type { TeamMember } from '~/types';
+import type { TeamMember, TeamMemberRole, ProjectMemberRoles } from '~/types';
+
+function membersToRoles(members: TeamMember[]): ProjectMemberRoles {
+  return members.reduce<ProjectMemberRoles>(
+    (acc, m) => ({ ...acc, [m.userId]: (m.role === 'admin' ? 'admin' : 'member') }),
+    {}
+  );
+}
+
+function membersToMemberIds(members: TeamMember[]): string[] {
+  return members.map((m) => m.userId);
+}
 
 export const useTeamMembers = () => {
   const { $firestore } = useNuxtApp();
@@ -17,11 +28,14 @@ export const useTeamMembers = () => {
   const auth = useAuth();
 
   /**
-   * Přidá uživatele do týmu projektu přes email
-   * Pokud uživatel s daným emailem existuje, přidá ho
-   * Pokud ne, vytvoří pending pozvánku
+   * Přidá uživatele do týmu projektu přes email.
+   * Role výchozí 'member'. Pouze Owner/Admin mohou přidávat.
    */
-  const addTeamMember = async (projectId: string, email: string) => {
+  const addTeamMember = async (
+    projectId: string,
+    email: string,
+    role: 'admin' | 'member' = 'member'
+  ) => {
     if (!auth.user.value) {
       console.warn('[Team] Cannot add member - not authenticated');
       return false;
@@ -66,17 +80,26 @@ export const useTeamMembers = () => {
         }
       }
 
-      // Přidej člena do týmu
       const newMember: Omit<TeamMember, 'addedAt'> & { addedAt: any } = {
         userId,
         email: normalizedEmail,
         displayName,
         addedAt: serverTimestamp(),
-        addedBy: auth.user.value.uid
+        addedBy: auth.user.value.uid,
+        role
       };
+
+      const projectData = projectDoc.exists() ? projectDoc.data() : {};
+      const existingMembers = (projectData.teamMembers || []) as TeamMember[];
+      const existingRoles = (projectData.memberRoles || {}) as ProjectMemberRoles;
+      const existingMemberIds = (projectData.memberIds || []) as string[];
+      const newMemberRoles = { ...existingRoles, [userId]: role };
+      const newMemberIds = existingMemberIds.includes(userId) ? existingMemberIds : [...existingMemberIds, userId];
 
       await updateDoc(projectRef, {
         teamMembers: arrayUnion(newMember),
+        memberRoles: newMemberRoles,
+        memberIds: newMemberIds,
         updatedAt: serverTimestamp()
       });
 
@@ -114,7 +137,7 @@ export const useTeamMembers = () => {
   };
 
   /**
-   * Aktualizuje seznam členů týmu (používá se když chceme odebrat člena)
+   * Aktualizuje seznam členů týmu (používá se když chceme odebrat člena nebo změnit role).
    */
   const updateTeamMembers = async (projectId: string, members: TeamMember[]) => {
     if (!auth.user.value) {
@@ -124,8 +147,12 @@ export const useTeamMembers = () => {
 
     try {
       const projectRef = doc(firestore, 'projects', projectId);
+      const memberRoles = membersToRoles(members);
+      const memberIds = membersToMemberIds(members);
       await updateDoc(projectRef, {
         teamMembers: members as any,
+        memberRoles,
+        memberIds,
         updatedAt: serverTimestamp()
       });
 
@@ -137,10 +164,39 @@ export const useTeamMembers = () => {
     }
   };
 
+  /**
+   * Změní roli člena týmu (admin | member). Owner měnit nelze – ten je vždy createdBy.
+   * Pouze Owner/Admin mohou měnit role.
+   */
+  const changeMemberRole = async (
+    projectId: string,
+    userId: string,
+    role: 'admin' | 'member'
+  ): Promise<boolean> => {
+    try {
+      const projectRef = doc(firestore, 'projects', projectId);
+      const projectDoc = await getDoc(projectRef);
+      if (!projectDoc.exists()) return false;
+
+      const projectData = projectDoc.data();
+      const members = (projectData.teamMembers || []) as TeamMember[];
+      const index = members.findIndex((m) => m.userId === userId);
+      if (index === -1) return false;
+
+      const updated = [...members];
+      updated[index] = { ...updated[index], role };
+      return await updateTeamMembers(projectId, updated);
+    } catch (error) {
+      console.error('[Team] Error changing role:', error);
+      return false;
+    }
+  };
+
   return {
     addTeamMember,
     removeTeamMember,
-    updateTeamMembers
+    updateTeamMembers,
+    changeMemberRole
   };
 };
 

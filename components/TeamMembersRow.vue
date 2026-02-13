@@ -3,7 +3,21 @@
     <div class="flex items-center gap-2 flex-wrap">
       <div class="text-sm font-medium text-gray-700 mr-2">Tým:</div>
       
-      <!-- Seznam členů týmu -->
+      <!-- Vlastník (createdBy) – není v teamMembers -->
+      <div
+        v-if="ownerDisplay"
+        class="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-full"
+      >
+        <div
+          class="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold bg-amber-500"
+        >
+          {{ getInitials(ownerDisplay) }}
+        </div>
+        <span class="text-sm text-gray-700">{{ ownerDisplay }}</span>
+        <span class="text-xs font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Vlastník</span>
+      </div>
+
+      <!-- Seznam členů týmu (Admin / Člen) -->
       <div
         v-for="member in teamMembersList"
         :key="member.email"
@@ -16,8 +30,22 @@
           {{ getInitials(member.displayName || member.email) }}
         </div>
         <span class="text-sm text-gray-700">{{ member.displayName || member.email }}</span>
+        <span class="text-xs font-medium px-1.5 py-0.5 rounded"
+          :class="member.role === 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'"
+        >
+          {{ member.role === 'admin' ? 'Admin' : 'Člen' }}
+        </span>
+        <USelectMenu
+          v-if="canChangeRoleFor(member)"
+          :items="roleOptions"
+          :model-value="member.role === 'admin' ? 'admin' : 'member'"
+          value-attribute="value"
+          @update:model-value="(v: string) => changeRole(member, v as 'admin'|'member')"
+        >
+          <UButton icon="i-heroicons-cog-6-tooth" size="xs" variant="ghost" color="gray" />
+        </USelectMenu>
         <UButton
-          v-if="canRemoveMember"
+          v-if="canRemoveMemberFor(member)"
           icon="i-heroicons-x-mark"
           size="xs"
           variant="ghost"
@@ -57,6 +85,13 @@
               Zadejte email uživatele, kterého chcete přidat do týmu
             </template>
           </UFormGroup>
+          <UFormGroup label="Role">
+            <USelectMenu
+              v-model="memberForm.role"
+              :items="roleOptions"
+              value-attribute="value"
+            />
+          </UFormGroup>
         </UForm>
 
         <template #footer>
@@ -95,27 +130,51 @@ const emit = defineEmits<{
 const auth = useAuth();
 const teamMembers = useTeamMembers();
 const firestoreProjects = useFirestoreProjects();
+const { canInviteMembers, canRemoveMembers, canChangeRoles } = useProjectRole(toRef(props, 'project'));
 
 const showAddMemberModal = ref(false);
 const memberForm = ref({
-  email: ''
+  email: '',
+  role: 'member' as 'admin' | 'member'
 });
+const roleOptions = [
+  { value: 'member', label: 'Člen' },
+  { value: 'admin', label: 'Admin' }
+];
 
 const teamMembersList = computed(() => {
   return props.project.teamMembers || [];
 });
 
-const canAddMember = computed(() => {
-  if (props.canAddMember !== undefined) return props.canAddMember;
-  // Vlastník projektu nebo člen týmu může přidávat
-  return props.project.createdBy === auth.user.value?.uid;
+/** Vlastník projektu – zobrazíme jen pokud máme jméno (např. aktuální uživatel) */
+const ownerDisplay = computed(() => {
+  if (props.project.createdBy !== auth.user.value?.uid) return null;
+  const u = auth.user.value;
+  return u?.displayName || u?.email || 'Vlastník';
 });
 
-const canRemoveMember = computed(() => {
-  if (props.canRemoveMember !== undefined) return props.canRemoveMember;
-  // Vlastník projektu může odebírat
-  return props.project.createdBy === auth.user.value?.uid;
+const canAddMember = computed(() => {
+  if (props.canAddMember !== undefined) return props.canAddMember;
+  return canInviteMembers.value;
 });
+
+/** Odebrat může Owner/Admin; u konkrétního člena jen pokud to není Owner (Owner není v seznamu) */
+function canRemoveMemberFor(_member: TeamMember) {
+  if (props.canRemoveMember !== undefined) return props.canRemoveMember;
+  return canRemoveMembers.value;
+}
+
+const canRemoveMember = computed(() => canRemoveMembers.value);
+
+function canChangeRoleFor(member: TeamMember) {
+  if (!canChangeRoles.value) return false;
+  return member.userId !== props.project.createdBy;
+}
+
+async function changeRole(member: TeamMember, role: 'admin' | 'member') {
+  const ok = await teamMembers.changeMemberRole(props.project.id, member.userId, role);
+  if (ok) await firestoreProjects.startListening();
+}
 
 function getInitials(text: string): string {
   if (!text) return '?';
@@ -152,7 +211,11 @@ async function addMember() {
     return;
   }
 
-  const success = await teamMembers.addTeamMember(props.project.id, memberForm.value.email);
+  const success = await teamMembers.addTeamMember(
+    props.project.id,
+    memberForm.value.email,
+    memberForm.value.role
+  );
   
   if (success) {
     emit('memberAdded', memberForm.value.email);

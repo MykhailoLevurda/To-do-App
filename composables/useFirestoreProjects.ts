@@ -26,7 +26,44 @@ export const useFirestoreProjects = () => {
   const auth = useAuth();
   const projectsStore = useProjectsStore();
   
-  let unsubscribe: Unsubscribe | null = null;
+  let unsubscribes: (() => void)[] = [];
+
+  /** Převod Firestore doc na Project (sdílená logika pro oba dotazy). */
+  function docToProject(doc: { id: string; data: () => Record<string, any> }): Project {
+    const data = doc.data();
+    const teamMembers = (data.teamMembers || []).map((member: any) => ({
+      userId: member.userId,
+      email: member.email,
+      displayName: member.displayName,
+      addedAt: member.addedAt?.toDate() || new Date(),
+      addedBy: member.addedBy,
+      role: member.role === 'admin' ? ('admin' as const) : ('member' as const)
+    }));
+    const rawStatuses = (data.statuses || []) as ProjectStatus[];
+    const statuses = rawStatuses.length > 0
+      ? rawStatuses.map((s: any) => ({
+          id: s.id,
+          title: s.title,
+          color: s.color ?? 'gray',
+          order: typeof s.order === 'number' ? s.order : 0
+        })).sort((a: { order: number }, b: { order: number }) => a.order - b.order)
+      : [...DEFAULT_PROJECT_STATUSES];
+    return {
+      id: doc.id,
+      name: data.name,
+      description: data.description,
+      color: data.color,
+      createdBy: data.createdBy,
+      status: data.status || 'active',
+      taskCount: data.taskCount || 0,
+      teamMembers,
+      memberRoles: data.memberRoles,
+      memberIds: data.memberIds,
+      statuses,
+      createdAt: data.createdAt?.toDate() || new Date(),
+      updatedAt: data.updatedAt?.toDate() || new Date()
+    };
+  }
 
   const startListening = () => {
     if (!auth.isAuthenticated || !auth.user.value) {
@@ -78,70 +115,28 @@ export const useFirestoreProjects = () => {
       projectsStore.setLoading(true);
     }
 
-    // Stop existing listener if any
-    if (unsubscribe) {
-      console.log('[Firestore Projects] Stopping previous listener');
-      unsubscribe();
+    // Stop existing listeners if any
+    if (unsubscribes.length > 0) {
+      console.log('[Firestore Projects] Stopping previous listeners');
+      unsubscribes.forEach((unsub) => unsub());
+      unsubscribes = [];
     }
 
     const projectsRef = collection(firestore, 'projects');
-    // Filter projects by current user
-    const q = query(
-      projectsRef, 
-      where('createdBy', '==', userId)
-    );
+    const qOwner = query(projectsRef, where('createdBy', '==', userId));
+    const qMember = query(projectsRef, where('memberIds', 'array-contains', userId));
 
-    console.log('[Firestore Projects] Query created for user:', userId);
+    const projectsByOwner = new Map<string, Project>();
+    const projectsByMember = new Map<string, Project>();
 
-    unsubscribe = onSnapshot(q, (snapshot) => {
-      const projects: Project[] = [];
-      
-      console.log('[Firestore Projects] Snapshot received, documents:', snapshot.size);
-      
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        
-        const teamMembers = (data.teamMembers || []).map((member: any) => ({
-          userId: member.userId,
-          email: member.email,
-          displayName: member.displayName,
-          addedAt: member.addedAt?.toDate() || new Date(),
-          addedBy: member.addedBy
-        }));
-
-        const rawStatuses = (data.statuses || []) as ProjectStatus[];
-        const statuses = rawStatuses.length > 0
-          ? rawStatuses.map((s: any) => ({
-              id: s.id,
-              title: s.title,
-              color: s.color ?? 'gray',
-              order: typeof s.order === 'number' ? s.order : 0
-            })).sort((a, b) => a.order - b.order)
-          : [...DEFAULT_PROJECT_STATUSES];
-
-        projects.push({
-          id: doc.id,
-          name: data.name,
-          description: data.description,
-          color: data.color,
-          createdBy: data.createdBy,
-          status: data.status || 'active',
-          taskCount: data.taskCount || 0,
-          teamMembers,
-          statuses,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date()
-        });
-      });
-
-      // Sort by creation date descending
+    function mergeAndPublish() {
+      const merged = new Map<string, Project>([...projectsByOwner, ...projectsByMember]);
+      const projects = Array.from(merged.values());
       projects.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
       projectsStore.setProjects(projects);
       projectsStore.setLoading(false);
       console.log(`[Firestore Projects] ✅ Projects synced for user ${userId}:`, projects.length, 'projects');
-      
-      // Manual cache to localStorage (safe serialization)
+
       if (process.client) {
         try {
           const cacheData = {
@@ -169,17 +164,46 @@ export const useFirestoreProjects = () => {
           console.warn('[Firestore Projects] Failed to cache projects:', e);
         }
       }
-    }, (error) => {
+    }
+
+    const onOwnerSnapshot = (snapshot: { forEach: (fn: (doc: { id: string; data: () => Record<string, any> }) => void) => void }) => {
+      projectsByOwner.clear();
+      snapshot.forEach((docSnapshot) => {
+        const project = docToProject(docSnapshot);
+        projectsByOwner.set(project.id, project);
+      });
+      mergeAndPublish();
+    };
+
+    const onMemberSnapshot = (snapshot: { forEach: (fn: (doc: { id: string; data: () => Record<string, any> }) => void) => void }) => {
+      projectsByMember.clear();
+      snapshot.forEach((docSnapshot) => {
+        const project = docToProject(docSnapshot);
+        projectsByMember.set(project.id, project);
+      });
+      mergeAndPublish();
+    };
+
+    const onError = (error: Error) => {
       console.error('[Firestore Projects] ❌ Error listening to projects:', error);
       projectsStore.setLoading(false);
-    });
+    };
+
+    unsubscribes.push(
+      onSnapshot(qOwner, onOwnerSnapshot, onError)
+    );
+    unsubscribes.push(
+      onSnapshot(qMember, onMemberSnapshot, onError)
+    );
+
+    console.log('[Firestore Projects] Listening: createdBy + memberIds array-contains');
   };
 
   const stopListening = () => {
-    if (unsubscribe) {
-      console.log('[Firestore Projects] Stopping listener');
-      unsubscribe();
-      unsubscribe = null;
+    if (unsubscribes.length > 0) {
+      console.log('[Firestore Projects] Stopping listeners');
+      unsubscribes.forEach((unsub) => unsub());
+      unsubscribes = [];
     }
   };
 
@@ -195,11 +219,20 @@ export const useFirestoreProjects = () => {
       const statuses = (project.statuses && project.statuses.length > 0)
         ? project.statuses
         : [];
+      const teamMembers = project.teamMembers ?? [];
+      const memberRoles = teamMembers.reduce<Record<string, 'admin' | 'member'>>(
+        (acc, m) => ({ ...acc, [m.userId]: (m.role === 'admin' ? 'admin' : 'member') }),
+        {}
+      );
+      const memberIds = teamMembers.map((m) => m.userId);
+
       const docRef = await addDoc(projectsRef, {
         ...project,
         createdBy,
         taskCount: 0,
-        teamMembers: project.teamMembers ?? [],
+        teamMembers,
+        memberRoles,
+        memberIds,
         statuses,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
