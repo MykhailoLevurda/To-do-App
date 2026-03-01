@@ -11,7 +11,25 @@ import {
 
 const auth = useAuth()
 const projectsStore = useProjectsStore()
+const firestoreProjects = useFirestoreProjects()
 const route = useRoute()
+
+// Načítat projekty globálně pro celou aplikaci (sidebar, stránka Uživatelé, atd.) – jen na klientu
+onMounted(() => {
+  if (auth.isAuthenticated && auth.user.value) {
+    firestoreProjects.startListening()
+  }
+})
+watch(() => auth.isAuthenticated, (isAuth) => {
+  if (import.meta.client) {
+    if (isAuth && auth.user.value) {
+      firestoreProjects.startListening()
+    } else {
+      firestoreProjects.stopListening()
+      projectsStore.clearProjects()
+    }
+  }
+}, { immediate: false })
 const showAuthModal = ref(false)
 const showUserProfileModal = ref(false)
 

@@ -19,13 +19,18 @@
         </UButton>
       </div>
 
-      <div v-else-if="inviteData" class="space-y-4">
+        <div v-else-if="inviteData" class="space-y-4">
         <div class="text-center py-4">
           <div class="text-6xl mb-4">🎉</div>
-          <h3 class="text-xl font-semibold mb-2">Pozvánka přijata!</h3>
+          <h3 class="text-xl font-semibold mb-2">Pozvánka do projektu</h3>
           <p class="text-gray-500">
-            Byli jste pozváni do týmu na email: <strong>{{ inviteData.email }}</strong>
+            Byli jste pozváni na email: <strong>{{ inviteData.email }}</strong>
+            <template v-if="inviteData.projectId"> do projektu</template>
           </p>
+        </div>
+
+        <div v-if="auth.isAuthenticated && inviteData.email && auth.user?.email && inviteData.email.toLowerCase() !== auth.user.email.toLowerCase()" class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+          Přihlášeni jste jako <strong>{{ auth.user.email }}</strong>, ale pozvánka byla odeslána na <strong>{{ inviteData.email }}</strong>. Pro přijetí pozvánky se přihlaste účtem s emailem {{ inviteData.email }}.
         </div>
 
         <div v-if="!auth.isAuthenticated" class="space-y-4">
@@ -47,8 +52,9 @@
             size="lg"
             @click="acceptInvite"
             :loading="isAccepting"
+            :disabled="!!(inviteData.email && auth.user?.email && inviteData.email.toLowerCase() !== auth.user.email.toLowerCase())"
           >
-            {{ isAccepting ? 'Připojuji se...' : 'Připojit se k týmu' }}
+            {{ isAccepting ? 'Připojuji se...' : 'Připojit se k projektu' }}
           </UButton>
         </div>
       </div>
@@ -124,20 +130,45 @@ async function acceptInvite() {
     return;
   }
 
+  const inviteEmail = inviteData.value.email?.toLowerCase();
+  const userEmail = auth.user.value.email?.toLowerCase();
+  if (inviteEmail && userEmail && inviteEmail !== userEmail) {
+    alert('Pro přijetí pozvánky se přihlaste účtem s emailem ' + inviteData.value.email);
+    return;
+  }
+
+  if (!inviteData.value.projectId) {
+    alert('Tato pozvánka je neplatná (chybí projekt). Použijte prosím nový odkaz z emailu.');
+    return;
+  }
+
   isAccepting.value = true;
 
   try {
-    // TODO: Implementovat skutečné připojení k týmu
-    // Měli byste zde:
-    // 1. Najít všechny projekty kde je pozvaný email
-    // 2. Aktualizovat teamMembers pole - změnit userId z pending na skutečné userId
-    // 3. Odstranit starý pending záznam
-    
-    // Pro demo jen ukážeme success
-    alert('Úspěšně jste se připojili k týmu!');
-    router.push('/users');
+    const firestoreProjects = useFirestoreProjects();
+    await firestoreProjects.startListening();
+    const projectsStore = useProjectsStore();
+    const project = projectsStore.projects.find((p) => p.id === inviteData.value.projectId);
+    if (project?.memberIds?.includes(auth.user.value.uid)) {
+      router.push('/projects/' + inviteData.value.projectId);
+      return;
+    }
+
+    const teamMembers = useTeamMembers();
+    const success = await teamMembers.acceptProjectInvite(
+      inviteData.value.projectId,
+      inviteData.value.email,
+      inviteData.value.role || 'member'
+    );
+
+    if (success) {
+      await firestoreProjects.startListening();
+      router.push('/projects/' + inviteData.value.projectId);
+    } else {
+      alert('Nepodařilo se připojit k projektu. Možná již byla pozvánka přijata nebo vypršela.');
+    }
   } catch (e: any) {
-    alert('Chyba při připojování k týmu: ' + e.message);
+    alert('Chyba při připojování: ' + e.message);
   } finally {
     isAccepting.value = false;
   }

@@ -211,21 +211,64 @@ async function addMember() {
     return;
   }
 
-  const success = await teamMembers.addTeamMember(
-    props.project.id,
-    memberForm.value.email,
-    memberForm.value.role
-  );
-  
-  if (success) {
-    emit('memberAdded', memberForm.value.email);
-    memberForm.value.email = '';
-    showAddMemberModal.value = false;
-    
-    // Refresh project data
-    await firestoreProjects.startListening();
-  } else {
-    alert('Nepodařilo se přidat člena do týmu');
+  const auth = useAuth();
+  if (!auth.user.value) {
+    alert('Musíte být přihlášeni');
+    return;
+  }
+
+  try {
+    console.log('[TeamMembersRow] Calling POST /api/invite', { email: memberForm.value.email, projectId: props.project.id });
+    const inviteResponse = await $fetch('/api/invite', {
+      method: 'POST',
+      body: {
+        email: memberForm.value.email,
+        projectId: props.project.id,
+        projectName: props.project.name,
+        invitedBy: auth.user.value.uid,
+        invitedByName: auth.user.value.displayName || auth.user.value.email,
+        role: memberForm.value.role
+      }
+    });
+
+    if (!inviteResponse?.success) {
+      alert('Chyba při odesílání pozvánky: ' + (inviteResponse?.error || 'Zkuste to znovu'));
+      return;
+    }
+
+    const success = await teamMembers.addTeamMember(
+      props.project.id,
+      memberForm.value.email,
+      memberForm.value.role
+    );
+
+    if (success) {
+      const addedEmail = memberForm.value.email;
+      emit('memberAdded', addedEmail);
+      memberForm.value.email = '';
+      showAddMemberModal.value = false;
+
+      await firestoreProjects.startListening();
+
+      const toast = useToast();
+      if (inviteResponse.resendRestriction && inviteResponse.inviteLink) {
+        try { await navigator.clipboard.writeText(inviteResponse.inviteLink); } catch (_) {}
+        toast.add({
+          title: 'Odkaz zkopírován do schránky',
+          description: 'Resend v testovacím režimu umožňuje odesílat pouze na váš email. Pošlete odkaz pozvanému ručně.',
+          color: 'yellow'
+        });
+      } else if (inviteResponse.demo) {
+        toast.add({ title: 'Člen přidán. Nastavte RESEND_API_KEY pro odesílání pozvánek emailem.', color: 'yellow' });
+      } else {
+        toast.add({ title: 'Pozvánka odeslána na ' + addedEmail, color: 'green' });
+      }
+    } else {
+      alert('Nepodařilo se přidat člena do týmu');
+    }
+  } catch (e: any) {
+    console.error('[TeamMembersRow] Error:', e);
+    alert('Chyba: ' + (e.data?.error || e.message || 'Zkuste to znovu'));
   }
 }
 

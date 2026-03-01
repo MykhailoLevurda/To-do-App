@@ -21,8 +21,8 @@ export const DEFAULT_PROJECT_STATUSES: ProjectStatus[] = [
 ];
 
 export const useFirestoreProjects = () => {
-  const { $firestore } = useNuxtApp();
-  const firestore = $firestore;
+  const nuxtApp = useNuxtApp();
+  const firestore = (nuxtApp as any).$firestore ?? null;
   const auth = useAuth();
   const projectsStore = useProjectsStore();
   
@@ -66,6 +66,10 @@ export const useFirestoreProjects = () => {
   }
 
   const startListening = () => {
+    if (!firestore) {
+      if (import.meta.client) console.warn('[Firestore Projects] Firestore not available (SSR?)');
+      return;
+    }
     if (!auth.isAuthenticated || !auth.user.value) {
       console.warn('[Firestore Projects] Cannot start listening - not authenticated');
       projectsStore.setLoading(false);
@@ -207,6 +211,42 @@ export const useFirestoreProjects = () => {
     }
   };
 
+  /**
+   * Jednorázové načtení projektů (getDocs místo listeneru).
+   * Použijte při otevření modalu pro přidání člena, aby byly projekty jistě k dispozici.
+   */
+  const fetchProjectsOnce = async (): Promise<boolean> => {
+    if (!import.meta.client) return false;
+    if (!firestore || !auth.user.value) return false;
+    const userId = auth.user.value.uid;
+    try {
+      projectsStore.setLoading(true);
+      const projectsRef = collection(firestore, 'projects');
+      const [ownerSnap, memberSnap] = await Promise.all([
+        getDocs(query(projectsRef, where('createdBy', '==', userId))),
+        getDocs(query(projectsRef, where('memberIds', 'array-contains', userId)))
+      ]);
+      const projectsMap = new Map<string, Project>();
+      const processDoc = (d: { id: string; data: () => Record<string, any> }) => {
+        const project = docToProject(d);
+        projectsMap.set(project.id, project);
+      };
+      ownerSnap.forEach(processDoc);
+      memberSnap.forEach(processDoc);
+      const projects = Array.from(projectsMap.values()).sort(
+        (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+      );
+      projectsStore.setProjects(projects);
+      projectsStore.setLoading(false);
+      console.log('[Firestore Projects] fetchProjectsOnce:', projects.length, 'projects');
+      return true;
+    } catch (e) {
+      console.error('[Firestore Projects] fetchProjectsOnce failed:', e);
+      projectsStore.setLoading(false);
+      return false;
+    }
+  };
+
   const addProject = async (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (!auth.user.value) {
       console.warn('[Firestore Projects] Cannot add project - not authenticated');
@@ -310,6 +350,7 @@ export const useFirestoreProjects = () => {
   return {
     startListening,
     stopListening,
+    fetchProjectsOnce,
     addProject,
     updateProject,
     deleteProject,

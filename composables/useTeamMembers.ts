@@ -1,13 +1,9 @@
 import {
-  collection,
   doc,
   getDoc,
   updateDoc,
   arrayUnion,
-  serverTimestamp,
-  query,
-  where,
-  getDocs
+  serverTimestamp
 } from 'firebase/firestore';
 import type { TeamMember, TeamMemberRole, ProjectMemberRoles } from '~/types';
 
@@ -45,25 +41,11 @@ export const useTeamMembers = () => {
       // Normalizuj email
       const normalizedEmail = email.toLowerCase().trim();
 
-      // Zkus najít uživatele s tímto emailem
-      const usersRef = collection(firestore, 'users');
-      const q = query(usersRef, where('email', '==', normalizedEmail));
-      const querySnapshot = await getDocs(q);
-
-      let userId: string;
-      let displayName: string | undefined;
-
-      if (!querySnapshot.empty) {
-        // Uživatel existuje
-        const userDoc = querySnapshot.docs[0];
-        userId = userDoc.id;
-        displayName = userDoc.data().displayName;
-      } else {
-        // Uživatel neexistuje - vytvoříme placeholder
-        // V produkci byste zde mohli odeslat pozvánku emailem
-        userId = `pending_${normalizedEmail.replace(/[^a-z0-9]/g, '_')}`;
-        displayName = normalizedEmail.split('@')[0];
-      }
+      // Pro pozvánky vždy používáme pending_ placeholder – Firestore pravidla nedovolují
+      // klientovi číst ostatní uživatele (users/{userId} allow read pouze vlastní dokument).
+      // Při přijetí pozvánky acceptProjectInvite nahradí pending skutečným userId.
+      const userId = `pending_${normalizedEmail.replace(/[^a-z0-9]/g, '_')}`;
+      const displayName = normalizedEmail.split('@')[0];
 
       // Zkontroluj, jestli už není v týmu
       const projectRef = doc(firestore, 'projects', projectId);
@@ -80,11 +62,12 @@ export const useTeamMembers = () => {
         }
       }
 
-      const newMember: Omit<TeamMember, 'addedAt'> & { addedAt: any } = {
+      // arrayUnion() neakceptuje serverTimestamp() – používáme new Date()
+      const newMember: Omit<TeamMember, 'addedAt'> & { addedAt: Date } = {
         userId,
         email: normalizedEmail,
         displayName,
-        addedAt: serverTimestamp(),
+        addedAt: new Date(),
         addedBy: auth.user.value.uid,
         role
       };
@@ -95,11 +78,16 @@ export const useTeamMembers = () => {
       const existingMemberIds = (projectData.memberIds || []) as string[];
       const newMemberRoles = { ...existingRoles, [userId]: role };
       const newMemberIds = existingMemberIds.includes(userId) ? existingMemberIds : [...existingMemberIds, userId];
+      const pendingInviteEmails = (projectData.pendingInviteEmails || []) as string[];
+      const newPendingInviteEmails = userId.startsWith('pending_')
+        ? [...new Set([...pendingInviteEmails, normalizedEmail])]
+        : pendingInviteEmails;
 
       await updateDoc(projectRef, {
         teamMembers: arrayUnion(newMember),
         memberRoles: newMemberRoles,
         memberIds: newMemberIds,
+        pendingInviteEmails: newPendingInviteEmails,
         updatedAt: serverTimestamp()
       });
 
@@ -128,8 +116,21 @@ export const useTeamMembers = () => {
       const projectData = projectDoc.data();
       const currentMembers = (projectData.teamMembers || []) as TeamMember[];
       const updatedMembers = currentMembers.filter(m => m.email !== email);
-      
-      return await updateTeamMembers(projectId, updatedMembers);
+      const pendingEmails = (projectData.pendingInviteEmails || []) as string[];
+      const removedMember = currentMembers.find(m => m.email === email);
+      const newPendingEmails = removedMember?.userId?.startsWith('pending_')
+        ? pendingEmails.filter(e => e !== email.toLowerCase().trim())
+        : pendingEmails;
+
+      await updateDoc(projectRef, {
+        teamMembers: updatedMembers as any,
+        memberRoles: membersToRoles(updatedMembers),
+        memberIds: membersToMemberIds(updatedMembers),
+        pendingInviteEmails: newPendingEmails,
+        updatedAt: serverTimestamp()
+      });
+      console.log('[Team] Member removed:', email);
+      return true;
     } catch (error) {
       console.error('[Team] Error removing member:', error);
       return false;
@@ -160,6 +161,68 @@ export const useTeamMembers = () => {
       return true;
     } catch (error) {
       console.error('[Team] Error updating members:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Přijme pozvánku – nahradí pending člena skutečným uživatelem.
+   * Volá uživatel, který byl pozván (jeho email musí být v pendingInviteEmails).
+   */
+  const acceptProjectInvite = async (
+    projectId: string,
+    email: string,
+    role: 'admin' | 'member' = 'member'
+  ): Promise<boolean> => {
+    if (!auth.user.value) return false;
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const realUserId = auth.user.value.uid;
+    const displayName = auth.user.value.displayName || auth.user.value.email?.split('@')[0];
+
+    try {
+      const projectRef = doc(firestore, 'projects', projectId);
+      const projectDoc = await getDoc(projectRef);
+      if (!projectDoc.exists()) return false;
+
+      const projectData = projectDoc.data();
+      const members = (projectData.teamMembers || []) as TeamMember[];
+      const pendingEmails = (projectData.pendingInviteEmails || []) as string[];
+
+      const pendingIndex = members.findIndex(
+        (m) => m.email === normalizedEmail && m.userId?.startsWith('pending_')
+      );
+      if (pendingIndex === -1) {
+        console.warn('[Team] No pending invite found for:', normalizedEmail);
+        return false;
+      }
+
+      const newMember: TeamMember = {
+        userId: realUserId,
+        email: normalizedEmail,
+        displayName,
+        addedAt: members[pendingIndex].addedAt instanceof Date ? members[pendingIndex].addedAt : new Date(),
+        addedBy: members[pendingIndex].addedBy,
+        role
+      };
+
+      const updatedMembers = [...members];
+      updatedMembers[pendingIndex] = newMember;
+
+      const newPendingEmails = pendingEmails.filter((e) => e !== normalizedEmail);
+
+      await updateDoc(projectRef, {
+        teamMembers: updatedMembers as any,
+        memberRoles: membersToRoles(updatedMembers),
+        memberIds: membersToMemberIds(updatedMembers),
+        pendingInviteEmails: newPendingEmails,
+        updatedAt: serverTimestamp()
+      });
+
+      console.log('[Team] Invite accepted:', normalizedEmail);
+      return true;
+    } catch (error) {
+      console.error('[Team] Error accepting invite:', error);
       return false;
     }
   };
@@ -196,7 +259,8 @@ export const useTeamMembers = () => {
     addTeamMember,
     removeTeamMember,
     updateTeamMembers,
-    changeMemberRole
+    changeMemberRole,
+    acceptProjectInvite
   };
 };
 

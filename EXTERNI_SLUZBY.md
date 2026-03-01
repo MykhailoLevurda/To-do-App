@@ -29,6 +29,13 @@ Aplikace Scrum Board používá **pouze Firebase** pro přihlašování, projekt
    NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
    NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
    NUXT_PUBLIC_FIREBASE_APP_ID=your-app-id
+
+   # Resend – odesílání pozvánkových emailů
+   RESEND_API_KEY=re_xxxxxxxxx
+   # Odesílatel – používejte ověřenou doménu (např. send.levtodo.online)
+   RESEND_FROM_EMAIL=Scrum Board <noreply@send.levtodo.online>
+   # URL aplikace pro odkazy v pozvánkách
+   NUXT_PUBLIC_APP_URL=https://levtodo.online
    ```
 
 3. Spusťte vývojový server:
@@ -54,6 +61,19 @@ Pravidla přístupu jsou v souboru `firestore.rules`.
 
 ---
 
-## Pozvánky
+## Pozvánky (Model A – pozvánka přímo do projektu)
 
-Endpoint `/api/invite` (POST) slouží k odeslání pozvánky do týmu (email). V produkci je potřeba doplnit skutečné odeslání e-mailu (např. SendGrid, Resend).
+Endpoint `/api/invite` (POST) slouží k odeslání pozvánky do **konkrétního projektu**. Pro skutečné odeslání je použita služba **Resend**. Nastavte v `.env` proměnnou `RESEND_API_KEY` (získejte klíč na [resend.com](https://resend.com)). Bez nastaveného klíče běží demo režim (logování místo odeslání).
+
+**Konfigurace pro send.levtodo.online:**
+- Doména `send.levtodo.online` je nastavena v Resend (DKIM, SPF, MX v Forpsi)
+- Do `.env` přidejte: `RESEND_FROM_EMAIL=Scrum Board <noreply@send.levtodo.online>`
+- Po ověření DNS v Resend (status „Pending“ → „Verified“) bude odesílání na libovolné adresy fungovat
+
+**Flow:** Owner/Admin projektu přidá člena emailem → odešle se pozvánka → pozvaný klikne na odkaz, přihlásí se → přijme pozvánku a stane se členem projektu.
+
+**Nasadit aplikaci pro funkční odkazy v pozvánkách:**
+- Odkazy v emailech vedou na `NUXT_PUBLIC_APP_URL` (např. `https://levtodo.online`)
+- Bez nasazení na veřejnou doménu vedou odkazy na localhost a nefungují
+- Nasazení: Vercel, Netlify, Firebase Hosting, Cloudflare Pages nebo VPS (např. Forpsi)
+- Po nasazení nastavte v produkci `NUXT_PUBLIC_APP_URL` na skutečnou URL aplikace

@@ -51,14 +51,17 @@ service cloud.firestore {
     }
 
     // Projects – Owner = createdBy; Admin = memberRoles[uid] == 'admin'; Member = v memberRoles nebo createdBy
+    // update také: uživatel přijímá pozvánku (jeho email je v pendingInviteEmails)
     match /projects/{projectId} {
       allow read: if request.auth != null
         && (resource.data.createdBy == request.auth.uid
-            || resource.data.get('memberRoles', {})[request.auth.uid] != null);
+            || resource.data.get('memberRoles', {})[request.auth.uid] != null
+            || request.auth.token.email in resource.data.get('pendingInviteEmails', []));
       allow create: if request.auth != null;
       allow update: if request.auth != null
         && (resource.data.createdBy == request.auth.uid
-            || resource.data.get('memberRoles', {})[request.auth.uid] == 'admin');
+            || resource.data.get('memberRoles', {})[request.auth.uid] == 'admin'
+            || request.auth.token.email in resource.data.get('pendingInviteEmails', []));
       allow delete: if request.auth != null
         && resource.data.createdBy == request.auth.uid;
     }

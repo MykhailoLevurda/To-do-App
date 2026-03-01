@@ -37,6 +37,8 @@ export interface Project {
   memberRoles?: ProjectMemberRoles;
   /** Pro dotaz „projekty, kde jsem člen“: array-contains(userId). Drž v sync s teamMembers (jen userId z teamMembers). */
   memberIds?: string[];
+  /** E-maily uživatelů s čekající pozvánkou (pro Firestore pravidla při accept). */
+  pendingInviteEmails?: string[];
   /** Vlastní stavy úkolů – majitel projektu je přidává; pokud prázdné, použijí se výchozí (To Do, In Progress, Done) */
   statuses?: ProjectStatus[];
 }

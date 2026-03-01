@@ -108,6 +108,37 @@
         </template>
 
         <UForm id="addMemberForm" :state="memberForm" @submit="addMember" class="space-y-4">
+          <UFormGroup label="Projekt" required>
+            <div class="flex gap-2">
+              <select
+                v-model="memberForm.projectId"
+                class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900"
+                :disabled="storeLoading"
+              >
+                <option value="">
+                  {{ storeLoading ? 'Načítám projekty...' : (projectOptions.length ? '— Vyberte projekt —' : '— Žádný projekt —') }}
+                </option>
+                <option
+                  v-for="opt in projectOptions"
+                  :key="opt.value"
+                  :value="opt.value"
+                >
+                  {{ opt.label }}
+                </option>
+              </select>
+              <UButton
+                icon="i-heroicons-arrow-path"
+                variant="outline"
+                size="md"
+                :loading="storeLoading"
+                title="Obnovit seznam projektů"
+                @click="firestoreProjects.fetchProjectsOnce()"
+              />
+            </div>
+            <template #description>
+              {{ projectOptions.length ? 'Projekt, do kterého chcete uživatele pozvat' : 'Žádné projekty. Vytvořte projekt na stránce Projekty (Přehled) a klikněte Obnovit.' }}
+            </template>
+          </UFormGroup>
           <UFormGroup label="Email" required>
             <UInput
               v-model="memberForm.email"
@@ -116,7 +147,7 @@
               autofocus
             />
             <template #description>
-              Zadáme email uživatele a pošleme mu pozvánku s odkazem pro připojení k týmu
+              Pošleme pozvánku s odkazem pro připojení k projektu
             </template>
           </UFormGroup>
         </UForm>
@@ -129,7 +160,7 @@
             <UButton
               form="addMemberForm"
               type="submit"
-              :disabled="!memberForm.email || !isValidEmail(memberForm.email) || isSending"
+              :disabled="!memberForm.projectId || !memberForm.email || !isValidEmail(memberForm.email) || isSending"
               :loading="isSending"
             >
               {{ isSending ? 'Odesílám pozvánku...' : 'Odeslat pozvánku' }}
@@ -143,16 +174,27 @@
 
 <script setup lang="ts">
 import { UsersIcon } from '@heroicons/vue/24/solid'
+import { storeToRefs } from 'pinia'
 
 const auth = useAuth();
 const firestoreProjects = useFirestoreProjects();
+const projectsStore = useProjectsStore();
+
+const { projects: storeProjects, isLoading: storeLoading } = storeToRefs(projectsStore);
 
 const isLoading = ref(true);
 const showAddMemberModal = ref(false);
 const isSending = ref(false);
 
+const projectOptions = computed(() => {
+  const projs = storeProjects.value ?? [];
+  const opts = projs.map((p) => ({ value: p.id, label: p.name || p.id }));
+  return opts;
+});
+
 const memberForm = ref({
-  email: ''
+  email: '',
+  projectId: '' as string
 });
 
 // Načíst všechny uživatele ze všech projektů
@@ -211,13 +253,23 @@ async function addMember() {
   isSending.value = true;
 
   try {
-    // Zavolej server endpoint pro odeslání pozvánky
+    const projectId = memberForm.value.projectId;
+    const project = storeProjects.value?.find((p) => p.id === projectId);
+    if (!projectId || !project) {
+      alert('Vyberte projekt');
+      return;
+    }
+
+    console.log('[Users] Calling POST /api/invite', { email: memberForm.value.email, projectId });
     const response = await $fetch('/api/invite', {
       method: 'POST',
       body: {
         email: memberForm.value.email,
+        projectId,
+        projectName: project.name,
         invitedBy: auth.user.value.uid,
-        invitedByName: auth.user.value.displayName || auth.user.value.email
+        invitedByName: auth.user.value.displayName || auth.user.value.email,
+        role: 'member'
       }
     }).catch((error: any) => {
       console.error('[Users] Fetch error:', error);
@@ -225,19 +277,28 @@ async function addMember() {
     });
 
     if (response.success) {
-      // Přidej uživatele do seznamu jako pending
-      usersList.value.push({
-        id: `pending_${memberForm.value.email}`,
-        email: memberForm.value.email,
-        displayName: memberForm.value.email.split('@')[0],
-        isPending: true,
-        addedAt: new Date()
-      });
+      const teamMembers = useTeamMembers();
+      await teamMembers.addTeamMember(projectId, memberForm.value.email, 'member');
+
+      await firestoreProjects.startListening();
+      await loadUsers();
 
       closeModal();
-      
-      // Zobrazit success message
-      alert('Pozvánka byla úspěšně odeslána na email: ' + memberForm.value.email);
+
+      if (response.resendRestriction && response.inviteLink) {
+        try {
+          await navigator.clipboard.writeText(response.inviteLink);
+        } catch (_) {}
+        const toast = useToast();
+        toast.add({
+          title: 'Odkaz zkopírován do schránky',
+          description: 'Resend umožňuje v testovacím režimu odesílat pouze na váš email. Pošlete odkaz pozvanému ručně. Pro odesílání emailem ověřte doménu na resend.com/domains.',
+          color: 'yellow'
+        });
+      } else {
+        const toast = useToast();
+        toast.add({ title: 'Pozvánka odeslána na ' + memberForm.value.email, color: 'green' });
+      }
     } else {
       alert('Chyba při odesílání pozvánky: ' + (response.error || 'Neznámá chyba'));
     }
@@ -252,6 +313,7 @@ async function addMember() {
 function closeModal() {
   showAddMemberModal.value = false;
   memberForm.value.email = '';
+  memberForm.value.projectId = '';
 }
 
 async function removeUser(user: any) {
@@ -268,8 +330,7 @@ async function loadUsers() {
   isLoading.value = true;
   
   try {
-    const projectsStore = useProjectsStore();
-    const allProjects = projectsStore.projects;
+    const allProjects = storeProjects.value ?? [];
     
     const usersMap = new Map<string, any>();
     
@@ -302,18 +363,29 @@ async function loadUsers() {
 onMounted(async () => {
   if (auth.isAuthenticated && auth.user.value) {
     firestoreProjects.startListening();
-    
-    // Počkat na načtení projektů (Firestore listener potřebuje čas)
+    await firestoreProjects.fetchProjectsOnce();
     await nextTick();
     setTimeout(async () => {
       await loadUsers();
-    }, 1500);
+    }, 500);
+  }
+});
+
+watch(() => auth.isAuthenticated, (isAuth) => {
+  if (isAuth && auth.user.value) {
+    firestoreProjects.startListening();
+    firestoreProjects.fetchProjectsOnce();
+  }
+}, { immediate: true });
+
+watch(showAddMemberModal, async (isOpen) => {
+  if (import.meta.client && isOpen && auth.isAuthenticated && auth.user.value) {
+    await firestoreProjects.fetchProjectsOnce();
   }
 });
 
 // Watch for projects changes
-const projectsStore = useProjectsStore();
-watch(() => projectsStore.projects, async () => {
+watch(storeProjects, async () => {
   if (auth.isAuthenticated) {
     await loadUsers();
   }

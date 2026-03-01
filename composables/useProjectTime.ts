@@ -29,7 +29,7 @@ export const useProjectTime = () => {
   const firestore = nuxtApp.$firestore as import('firebase/firestore').Firestore | null;
   const auth = useAuth();
 
-  if (!firestore) {
+  if (!firestore && import.meta.client) {
     console.warn('[ProjectTime] Firestore is not available');
   }
 
