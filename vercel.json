@@ -1,0 +1,4 @@
+{
+  "framework": "nuxtjs",
+  "buildCommand": "VERCEL=1 nuxt build"
+}
