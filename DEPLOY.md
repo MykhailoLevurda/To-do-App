@@ -38,6 +38,7 @@ V [vercel.com/dashboard](https://vercel.com) → váš projekt → **Settings** 
 | `NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | (z .env) |
 | `NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | (z .env) |
 | `NUXT_PUBLIC_FIREBASE_APP_ID` | (z .env) |
+| `FIREBASE_SERVICE_ACCOUNT` | JSON service account (pro přijímání pozvánek) |
 
 Po přidání proměnných spusťte **Redeploy**.
 

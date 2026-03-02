@@ -166,8 +166,43 @@ export const useTeamMembers = () => {
   };
 
   /**
+   * Přijme pozvánku přes server API (obchází Firestore rules).
+   * Při selhání API (chybí FIREBASE_SERVICE_ACCOUNT) zkusí fallback na přímé Firestore.
+   */
+  const acceptProjectInviteViaApi = async (
+    projectId: string,
+    fallbackEmail?: string,
+    fallbackRole: 'admin' | 'member' = 'member'
+  ): Promise<boolean> => {
+    if (!auth.user.value) return false;
+
+    try {
+      const nuxtApp = useNuxtApp();
+      const firebaseAuth = (nuxtApp as any).$firebaseAuth;
+      if (!firebaseAuth?.currentUser) return false;
+
+      const token = await firebaseAuth.currentUser.getIdToken();
+
+      const res = await $fetch<{ success: boolean; error?: string }>('/api/invite/accept', {
+        method: 'POST',
+        body: { projectId },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      return res.success;
+    } catch (e) {
+      console.warn('[Team] acceptProjectInviteViaApi failed, fallback to Firestore:', e);
+      const email = fallbackEmail || auth.user.value?.email;
+      if (!email) return false;
+      return acceptProjectInvite(projectId, email, fallbackRole);
+    }
+  };
+
+  /**
    * Přijme pozvánku – nahradí pending člena skutečným uživatelem.
    * Volá uživatel, který byl pozván (jeho email musí být v pendingInviteEmails).
+   * Problém: Firestore rules mohou selhat kvůli request.auth.token.email (case, null).
+   * Preferujte acceptProjectInviteViaApi.
    */
   const acceptProjectInvite = async (
     projectId: string,
@@ -260,7 +295,8 @@ export const useTeamMembers = () => {
     removeTeamMember,
     updateTeamMembers,
     changeMemberRole,
-    acceptProjectInvite
+    acceptProjectInvite,
+    acceptProjectInviteViaApi
   };
 };
 

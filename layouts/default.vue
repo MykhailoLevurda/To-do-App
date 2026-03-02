@@ -254,6 +254,9 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
+            <!-- Notifications (zvonek) -->
+            <NotificationBell />
+
             <!-- Color Mode Toggle -->
             <UButton
               :icon="$colorMode.preference === 'dark' ? 'i-heroicons-sun' : 'i-heroicons-moon'"

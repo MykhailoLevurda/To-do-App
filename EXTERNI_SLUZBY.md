@@ -72,6 +72,14 @@ Endpoint `/api/invite` (POST) slouží k odeslání pozvánky do **konkrétního
 
 **Flow:** Owner/Admin projektu přidá člena emailem → odešle se pozvánka → pozvaný klikne na odkaz, přihlásí se → přijme pozvánku a stane se členem projektu.
 
+**Firebase Service Account (pro přijímání pozvánek):** Endpoint `/api/invite/accept` používá Firebase Admin. Dva způsoby konfigurace:
+
+1. **Soubor (doporučeno):** Stáhněte JSON z Firebase Console (Service accounts → Generate new private key). Uložte jako `firebase-service-account.json` do kořene projektu. Do `.env` přidejte:
+   ```
+   FIREBASE_SERVICE_ACCOUNT_PATH=firebase-service-account.json
+   ```
+2. **Proměnná:** Do `.env` přidejte `FIREBASE_SERVICE_ACCOUNT` s celým JSON (v jednoduchých uvozovkách). V produkci (Vercel) přidejte jako Environment Variable.
+
 **Nasadit aplikaci pro funkční odkazy v pozvánkách:**
 - Odkazy v emailech vedou na `NUXT_PUBLIC_APP_URL` (např. `https://levtodo.online`)
 - Bez nasazení na veřejnou doménu vedou odkazy na localhost a nefungují

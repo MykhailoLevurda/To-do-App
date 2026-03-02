@@ -21,6 +21,10 @@ node_modules
 .env.*
 !.env.example
 
+# Firebase service account (nikdy necommitujte!)
+firebase-service-account.json
+*-service-account*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -30,3 +34,4 @@ node_modules
 *.njsproj
 *.sln
 *.sw?
+.vercel

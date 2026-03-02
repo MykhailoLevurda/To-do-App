@@ -40,10 +40,9 @@ export default defineNuxtConfig({
       watch: [],
       port: 3000
     },
-    // Workaround pro srvx problém
     compatibilityDate: '2024-01-01',
-    // Vypnout některé experimentální funkce, které mohou způsobovat problémy
-    preset: 'node-server'
+    // Vercel nastaví VERCEL=1 – použijeme vercel preset pro deployment
+    preset: process.env.VERCEL ? 'vercel' : 'node-server'
   },
   // Zlepšit handling při restartu dev serveru
   devServer: {

@@ -1,5 +1,5 @@
 <template>
-  <div class="invite-page flex items-center justify-center min-h-screen bg-gray-50">
+  <div class="invite-page flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
     <UCard class="max-w-md w-full">
       <template #header>
         <h2 class="text-2xl font-bold text-center">Pozvánka do týmu</h2>
@@ -19,7 +19,7 @@
         </UButton>
       </div>
 
-        <div v-else-if="inviteData" class="space-y-4">
+      <div v-else-if="inviteData" class="space-y-4">
         <div class="text-center py-4">
           <div class="text-6xl mb-4">🎉</div>
           <h3 class="text-xl font-semibold mb-2">Pozvánka do projektu</h3>
@@ -29,25 +29,26 @@
           </p>
         </div>
 
-        <div v-if="auth.isAuthenticated && inviteData.email && auth.user?.email && inviteData.email.toLowerCase() !== auth.user.email.toLowerCase()" class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
-          Přihlášeni jste jako <strong>{{ auth.user.email }}</strong>, ale pozvánka byla odeslána na <strong>{{ inviteData.email }}</strong>. Pro přijetí pozvánky se přihlaste účtem s emailem {{ inviteData.email }}.
+        <div v-if="auth.isAuthenticated && inviteData.email && auth.user?.email && inviteData.email.toLowerCase() !== auth.user.email.toLowerCase()" class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-800 dark:text-amber-200 text-sm">
+          Přihlášeni jste jako <strong>{{ auth.user.email }}</strong>, ale pozvánka byla odeslána na <strong>{{ inviteData.email }}</strong>. Pro přijetí pozvánky se odhlaste a přihlaste účtem {{ inviteData.email }}.
         </div>
 
         <div v-if="!auth.isAuthenticated" class="space-y-4">
-          <p class="text-sm text-gray-600 text-center">
-            Pro připojení k týmu se prosím přihlaste nebo vytvořte účet.
+          <p class="text-sm text-gray-600 dark:text-gray-400 text-center">
+            Pro přijetí pozvánky se přihlaste nebo si vytvořte účet s emailem <strong>{{ inviteData.email }}</strong>.
           </p>
           <UButton
             block
             size="lg"
             @click="showAuthModal = true"
           >
-            Přihlásit se / Registrovat
+            Přihlásit se pro přijetí pozvánky
           </UButton>
         </div>
 
         <div v-else class="space-y-4">
           <UButton
+            v-if="!autoAccepting"
             block
             size="lg"
             @click="acceptInvite"
@@ -56,6 +57,10 @@
           >
             {{ isAccepting ? 'Připojuji se...' : 'Připojit se k projektu' }}
           </UButton>
+          <div v-else class="text-center py-4">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
+            <p class="text-sm text-gray-500">Přijímám pozvánku...</p>
+          </div>
         </div>
       </div>
 
@@ -79,7 +84,9 @@ const isLoading = ref(true);
 const error = ref<string | null>(null);
 const inviteData = ref<any>(null);
 const isAccepting = ref(false);
+const autoAccepting = ref(false);
 const showAuthModal = ref(false);
+const toast = useToast();
 
 // Dekódovat pozvánkový token
 function decodeInviteToken(token: string): any | null {
@@ -155,7 +162,7 @@ async function acceptInvite() {
     }
 
     const teamMembers = useTeamMembers();
-    const success = await teamMembers.acceptProjectInvite(
+    const success = await teamMembers.acceptProjectInviteViaApi(
       inviteData.value.projectId,
       inviteData.value.email,
       inviteData.value.role || 'member'
@@ -174,11 +181,29 @@ async function acceptInvite() {
   }
 }
 
-// Watch pro změnu auth stavu
-watch(() => auth.isAuthenticated, (isAuth) => {
-  if (isAuth && inviteData.value) {
-    // Uživatel se přihlásil, můžeme přijmout pozvánku
-    showAuthModal.value = false;
+// Po přihlášení automaticky přijmout pozvánku (pokud email souhlasí)
+watch(() => auth.isAuthenticated, async (isAuth) => {
+  if (!isAuth || !inviteData.value) return;
+
+  showAuthModal.value = false;
+
+  const inviteEmail = inviteData.value.email?.toLowerCase();
+  const userEmail = auth.user.value?.email?.toLowerCase();
+  if (inviteEmail && userEmail && inviteEmail !== userEmail) return;
+
+  // Krátké zpoždění – nechat se ustálit Firebase auth
+  autoAccepting.value = true;
+  await new Promise((r) => setTimeout(r, 800));
+
+  try {
+    toast.add({
+      title: 'Byli jste pozváni do projektu',
+      description: 'Přijímám pozvánku...',
+      color: 'blue'
+    });
+    await acceptInvite();
+  } finally {
+    autoAccepting.value = false;
   }
 });
 </script>
