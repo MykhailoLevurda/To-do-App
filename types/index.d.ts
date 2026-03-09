@@ -11,6 +11,20 @@ export interface TeamMember {
   role?: 'admin' | 'member';
 }
 
+/** Polozka checklistu na ukolu (jako Trello) */
+export interface ChecklistItem {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+/** Odkaz prilohy na ukolu (odkaz nebo nazev souboru) */
+export interface AttachmentLink {
+  id: string;
+  name: string;
+  url: string;
+}
+
 /** Vlastní stav úkolu v projektu (sloupec na boardu) */
 export interface ProjectStatus {
   id: string;

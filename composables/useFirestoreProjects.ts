@@ -20,6 +20,38 @@ export const DEFAULT_PROJECT_STATUSES: ProjectStatus[] = [
   { id: 'done', title: 'Done', color: 'green', order: 2 }
 ];
 
+/** Šablony projektu při vytváření (inspirace Trello/Jira) */
+export const PROJECT_TEMPLATES: { id: string; label: string; description: string; statuses: ProjectStatus[] }[] = [
+  {
+    id: 'empty',
+    label: 'Prázdný',
+    description: 'Bez předvyplněných stavů',
+    statuses: []
+  },
+  {
+    id: 'kanban',
+    label: 'Kanban',
+    description: 'To Do, In Progress, Done',
+    statuses: [
+      { id: 'todo', title: 'To Do', color: '#3b82f6', order: 0 },
+      { id: 'in-progress', title: 'In Progress', color: '#eab308', order: 1 },
+      { id: 'done', title: 'Done', color: '#22c55e', order: 2 }
+    ]
+  },
+  {
+    id: 'software',
+    label: 'Software (Scrum)',
+    description: 'Backlog, To Do, In Progress, Review, Done',
+    statuses: [
+      { id: 'backlog', title: 'Backlog', color: '#6b7280', order: 0 },
+      { id: 'todo', title: 'To Do', color: '#3b82f6', order: 1 },
+      { id: 'in-progress', title: 'In Progress', color: '#eab308', order: 2 },
+      { id: 'review', title: 'Code Review', color: '#8b5cf6', order: 3 },
+      { id: 'done', title: 'Done', color: '#22c55e', order: 4 }
+    ]
+  }
+];
+
 export const useFirestoreProjects = () => {
   const nuxtApp = useNuxtApp();
   const firestore = (nuxtApp as any).$firestore ?? null;

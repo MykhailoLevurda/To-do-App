@@ -296,6 +296,12 @@ import { DEFAULT_PROJECT_STATUSES } from '~/composables/useFirestoreProjects';
 
 const props = defineProps<{
   projectId: string;
+  /** Kdyz prijde z Backlogu "Otevrit", otevrit tento ukol v panelu */
+  openTaskId?: string | null;
+}>();
+
+const emit = defineEmits<{
+  'clear-open-task-id': [];
 }>();
 
 const projectsStore = useProjectsStore();
@@ -340,6 +346,28 @@ const showEditTaskModal = ref(false);
 const editingTask = ref<TaskItem | null>(null);
 const isAddingTask = ref(false);
 const selectedTask = ref<TaskItem | null>(null);
+
+const pendingOpenTaskId = ref<string | null>(null);
+watch(
+  () => props.openTaskId,
+  (id) => {
+    pendingOpenTaskId.value = id || null;
+  },
+  { immediate: true }
+);
+watch(
+  () => [pendingOpenTaskId.value, projectTasks.value] as const,
+  ([id, tasks]) => {
+    if (!id || !tasks?.length) return;
+    const task = tasks.find((t: TaskItem) => t.id === id);
+    if (task) {
+      selectedTask.value = task;
+      pendingOpenTaskId.value = null;
+      emit('clear-open-task-id');
+    }
+  },
+  { immediate: true }
+);
 
 const newTask = ref({
   title: '',
@@ -393,6 +421,13 @@ async function addTask() {
       isAddingTask.value = false;
       return;
     }
+    const firstStatusId = columns.value[0]?.id;
+    const backlogTasks = firstStatusId
+      ? projectTasks.value.filter((t) => t.status === firstStatusId)
+      : [];
+    const maxOrder = backlogTasks.length
+      ? Math.max(...backlogTasks.map((t) => t.backlogOrder ?? 0), 0)
+      : 0;
     const id = await firestoreTasks.addTask({
       title,
       description: newTask.value.description?.trim(),
@@ -401,7 +436,8 @@ async function addTask() {
       storyPoints: newTask.value.storyPoints ?? 0,
       status: statusId,
       projectId: props.projectId,
-      dueDate: newTask.value.dueDate ? new Date(newTask.value.dueDate) : undefined
+      dueDate: newTask.value.dueDate ? new Date(newTask.value.dueDate) : undefined,
+      backlogOrder: firstStatusId === statusId ? maxOrder + 1 : 0
     });
     if (id) {
       newTask.value = {

@@ -143,6 +143,17 @@
             />
           </UFormGroup>
 
+          <UFormGroup v-if="!editingProject" label="Šablona" name="templateId">
+            <USelect
+              v-model="projectForm.templateId"
+              :options="PROJECT_TEMPLATES.map((t) => ({ value: t.id, label: t.label }))"
+              placeholder="Vyberte šablonu"
+            />
+            <template #hint>
+              Předvyplněné stavy úkolů (sloupce na boardu). Lze později upravit v projektu.
+            </template>
+          </UFormGroup>
+
           <UFormGroup label="Barva">
             <div class="flex gap-2 flex-wrap">
               <button
@@ -184,6 +195,7 @@
 
 <script setup lang="ts">
 import type { Project } from '~/types';
+import { PROJECT_TEMPLATES } from '~/composables/useFirestoreProjects';
 
 const projectsStore = useProjectsStore();
 const firestoreProjects = useFirestoreProjects();
@@ -202,11 +214,13 @@ const projectForm = ref<{
   description: string;
   color: string;
   status: 'active' | 'archived';
+  templateId: string;
 }>({
   name: '',
   description: '',
   color: '#3b82f6',
-  status: 'active'
+  status: 'active',
+  templateId: 'kanban'
 });
 
 const availableColors = [
@@ -255,11 +269,14 @@ async function saveProject() {
         toast.add({ title: 'Nepodařilo se uložit změny', color: 'red' });
       }
     } else {
+      const template = PROJECT_TEMPLATES.find((t) => t.id === projectForm.value.templateId);
+      const statuses = template?.statuses ?? [];
       const id = await firestoreProjects.addProject({
         name,
         description: projectForm.value.description?.trim() || '',
         color: projectForm.value.color,
-        status: projectForm.value.status
+        status: projectForm.value.status,
+        statuses
       });
       if (id) {
         closeProjectModal();
@@ -295,7 +312,8 @@ function closeProjectModal() {
     name: '',
     description: '',
     color: '#3b82f6',
-    status: 'active'
+    status: 'active',
+    templateId: 'kanban'
   };
 }
 

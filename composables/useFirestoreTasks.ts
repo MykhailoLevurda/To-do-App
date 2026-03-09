@@ -55,9 +55,11 @@ export const useFirestoreTasks = () => {
           dueDate: data.dueDate?.toDate(),
           approved: data.approved || false,
           createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date()
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+          checklist: data.checklist || [],
+          attachmentLinks: data.attachmentLinks || [],
+          backlogOrder: data.backlogOrder ?? 0
         };
-        
         tasks.push(task);
       });
 

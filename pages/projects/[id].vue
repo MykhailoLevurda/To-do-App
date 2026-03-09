@@ -14,6 +14,18 @@ const currentProject = computed(() => {
   return projectsStore.getProjectById(projectId.value);
 });
 
+const viewMode = ref(0); // 0 = Board, 1 = Backlog
+const viewTabs = [
+  { label: 'Board', icon: 'i-heroicons-squares-2x2' },
+  { label: 'Backlog', icon: 'i-heroicons-list-bullet' }
+];
+const openTaskIdFromBacklog = ref<string | null>(null);
+
+function openTaskFromBacklog(task: { id: string }) {
+  openTaskIdFromBacklog.value = task.id;
+  viewMode.value = 0;
+}
+
 const showDeleteModal = ref(false);
 const isDeleting = ref(false);
 const showEditModal = ref(false);
@@ -188,7 +200,19 @@ watch(currentProject, (project) => {
       />
     </div>
 
-    <ScrumBoard :project-id="projectId" />
+    <UTabs v-model="viewMode" :items="viewTabs" class="mb-4" />
+
+    <ScrumBoard
+      v-if="viewMode === 0"
+      :project-id="projectId"
+      :open-task-id="openTaskIdFromBacklog"
+      @clear-open-task-id="openTaskIdFromBacklog = null"
+    />
+    <BacklogView
+      v-else
+      :project-id="projectId"
+      @select="openTaskFromBacklog"
+    />
   </div>
 
   <div v-else-if="projectsStore.isLoading" class="flex items-center justify-center py-20">

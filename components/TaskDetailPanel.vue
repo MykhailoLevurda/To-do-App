@@ -57,6 +57,114 @@
           <span v-if="task.storyPoints" class="text-xs text-gray-500">Body: {{ task.storyPoints }}</span>
         </section>
 
+        <!-- Checklist (subukoly jako Trello) -->
+        <section class="border-t border-gray-200 dark:border-gray-800 pt-4">
+          <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+            <span class="i-heroicons-clipboard-document-check w-4 h-4" />
+            Checklist ({{ checklistDoneCount }}/{{ taskChecklist.length }})
+          </h3>
+          <div v-if="taskChecklist.length" class="space-y-1.5 mb-2">
+            <div
+              v-for="item in taskChecklist"
+              :key="item.id"
+              class="flex items-center gap-2 group"
+            >
+              <input
+                type="checkbox"
+                :checked="item.done"
+                class="rounded border-gray-300 text-primary focus:ring-primary"
+                @change="toggleChecklistItem(item)"
+              />
+              <span
+                class="text-sm flex-1 min-w-0"
+                :class="item.done ? 'line-through text-gray-500' : 'text-gray-700 dark:text-gray-300'"
+              >
+                {{ item.title }}
+              </span>
+              <UButton
+                icon="i-heroicons-trash"
+                size="xs"
+                variant="ghost"
+                color="red"
+                class="opacity-0 group-hover:opacity-100"
+                aria-label="Odebrat"
+                @click="removeChecklistItem(item.id)"
+              />
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <UInput
+              v-model="newChecklistTitle"
+              placeholder="Přidat položku..."
+              size="sm"
+              class="flex-1 min-w-0"
+              @keydown.enter.prevent="addChecklistItem"
+            />
+            <UButton
+              icon="i-heroicons-plus"
+              size="sm"
+              :disabled="!newChecklistTitle.trim()"
+              @click="addChecklistItem"
+            >
+              Přidat
+            </UButton>
+          </div>
+        </section>
+
+        <!-- Přílohy (odkazy) -->
+        <section class="border-t border-gray-200 dark:border-gray-800 pt-4">
+          <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+            <span class="i-heroicons-paper-clip w-4 h-4" />
+            Přílohy ({{ taskAttachmentLinks.length }})
+          </h3>
+          <div v-if="taskAttachmentLinks.length" class="space-y-1.5 mb-2">
+            <a
+              v-for="att in taskAttachmentLinks"
+              :key="att.id"
+              :href="att.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-primary break-all"
+            >
+              <span class="i-heroicons-link w-4 h-4 shrink-0" />
+              <span class="min-w-0 truncate">{{ att.name || att.url }}</span>
+              <UButton
+                icon="i-heroicons-trash"
+                size="xs"
+                variant="ghost"
+                color="red"
+                class="shrink-0"
+                aria-label="Odebrat odkaz"
+                @click.prevent="removeAttachmentLink(att.id)"
+              />
+            </a>
+          </div>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <UInput
+              v-model="newAttachmentName"
+              placeholder="Název (volitelné)"
+              size="sm"
+              class="flex-1 min-w-0"
+            />
+            <UInput
+              v-model="newAttachmentUrl"
+              placeholder="https://..."
+              size="sm"
+              type="url"
+              class="flex-1 min-w-0"
+              @keydown.enter.prevent="addAttachmentLink"
+            />
+            <UButton
+              icon="i-heroicons-plus"
+              size="sm"
+              :disabled="!newAttachmentUrl.trim()"
+              @click="addAttachmentLink"
+            >
+              Přidat odkaz
+            </UButton>
+          </div>
+        </section>
+
         <!-- Komentáře -->
         <section class="border-t border-gray-200 dark:border-gray-800 pt-4">
           <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
@@ -209,6 +317,68 @@ const editingCommentId = ref<string | null>(null);
 const editingCommentText = ref('');
 
 const task = computed(() => props.task);
+
+const taskChecklist = computed(() => task.value?.checklist ?? []);
+const checklistDoneCount = computed(() => taskChecklist.value.filter((i: { done: boolean }) => i.done).length);
+const taskAttachmentLinks = computed(() => task.value?.attachmentLinks ?? []);
+
+const newChecklistTitle = ref('');
+const newAttachmentName = ref('');
+const newAttachmentUrl = ref('');
+
+function genId() {
+  return `cl-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+async function addChecklistItem() {
+  if (!task.value || !newChecklistTitle.value.trim()) return;
+  const list = [...taskChecklist.value, { id: genId(), title: newChecklistTitle.value.trim(), done: false }];
+  const ok = await firestoreTasks.updateTask(task.value.id, { checklist: list });
+  if (ok) {
+    scrumBoard.updateTask(task.value.id, { checklist: list });
+    newChecklistTitle.value = '';
+  } else {
+    useToast().add({ title: 'Nepodařilo se přidat položku', color: 'red' });
+  }
+}
+
+async function toggleChecklistItem(item: { id: string; title: string; done: boolean }) {
+  if (!task.value) return;
+  const list = taskChecklist.value.map((i: { id: string; title: string; done: boolean }) =>
+    i.id === item.id ? { ...i, done: !i.done } : i
+  );
+  const ok = await firestoreTasks.updateTask(task.value.id, { checklist: list });
+  if (ok) scrumBoard.updateTask(task.value.id, { checklist: list });
+}
+
+async function removeChecklistItem(id: string) {
+  if (!task.value) return;
+  const list = taskChecklist.value.filter((i: { id: string }) => i.id !== id);
+  const ok = await firestoreTasks.updateTask(task.value.id, { checklist: list });
+  if (ok) scrumBoard.updateTask(task.value.id, { checklist: list });
+}
+
+async function addAttachmentLink() {
+  if (!task.value || !newAttachmentUrl.value.trim()) return;
+  const url = newAttachmentUrl.value.trim();
+  const name = newAttachmentName.value.trim() || url;
+  const list = [...taskAttachmentLinks.value, { id: genId(), name, url }];
+  const ok = await firestoreTasks.updateTask(task.value.id, { attachmentLinks: list });
+  if (ok) {
+    scrumBoard.updateTask(task.value.id, { attachmentLinks: list });
+    newAttachmentName.value = '';
+    newAttachmentUrl.value = '';
+  } else {
+    useToast().add({ title: 'Nepodařilo se přidat odkaz', color: 'red' });
+  }
+}
+
+async function removeAttachmentLink(id: string) {
+  if (!task.value) return;
+  const list = taskAttachmentLinks.value.filter((a: { id: string }) => a.id !== id);
+  const ok = await firestoreTasks.updateTask(task.value.id, { attachmentLinks: list });
+  if (ok) scrumBoard.updateTask(task.value.id, { attachmentLinks: list });
+}
 
 const completedStatusId = computed(() => props.completedStatusId ?? 'done');
 const firstStatusId = computed(() => props.firstStatusId ?? 'todo');

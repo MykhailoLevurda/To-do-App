@@ -14,6 +14,12 @@ export interface TaskItem {
   createdAt: Date;
   updatedAt: Date;
   approved?: boolean;
+  /** Checklist (subukoly) na kartě – jako Trello */
+  checklist?: { id: string; title: string; done: boolean }[];
+  /** Odkazy příloh (název + URL) */
+  attachmentLinks?: { id: string; name: string; url: string }[];
+  /** Pořadí v backlogu (první sloupec); menší = výše */
+  backlogOrder?: number;
 }
 
 export interface ScrumBoardState {
