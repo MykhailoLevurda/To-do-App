@@ -7,6 +7,9 @@ export interface TaskItem {
   /** Id stavu z project.statuses (nebo 'todo'|'in-progress'|'done' pro zpětnou kompatibilitu) */
   status: string;
   priority: 'low' | 'medium' | 'high';
+  /** userId přiřazeného člena (z teamMembers projektu) */
+  assigneeId?: string;
+  /** Jméno přiřazeného pro zobrazení (např. z teamMembers) */
   assignee?: string;
   storyPoints?: number;
   projectId: string;
@@ -20,6 +23,8 @@ export interface TaskItem {
   attachmentLinks?: { id: string; name: string; url: string }[];
   /** Pořadí v backlogu (první sloupec); menší = výše */
   backlogOrder?: number;
+  /** Štítky (např. bug, feature) – id z předdefinovaných */
+  labelIds?: string[];
 }
 
 export interface ScrumBoardState {

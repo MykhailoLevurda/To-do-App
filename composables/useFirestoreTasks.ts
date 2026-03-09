@@ -49,6 +49,7 @@ export const useFirestoreTasks = () => {
           description: data.description,
           status: data.status,
           priority: data.priority,
+          assigneeId: data.assigneeId,
           assignee: data.assignee,
           storyPoints: data.storyPoints,
           projectId: data.projectId,
@@ -58,7 +59,8 @@ export const useFirestoreTasks = () => {
           updatedAt: data.updatedAt?.toDate() || new Date(),
           checklist: data.checklist || [],
           attachmentLinks: data.attachmentLinks || [],
-          backlogOrder: data.backlogOrder ?? 0
+          backlogOrder: data.backlogOrder ?? 0,
+          labelIds: data.labelIds || []
         };
         tasks.push(task);
       });

@@ -18,26 +18,61 @@
 </template>
 
 <script setup lang="ts">
+import type { TaskItem } from '~/stores/todos';
+
+const props = defineProps<{
+  /** Úkoly s termínem dnes nebo zítra (z layoutu při otevřeném projektu) */
+  dueSoonTasks?: TaskItem[];
+}>();
+
 const auth = useAuth();
 const route = useRoute();
 const notifications = useNotifications();
 const router = useRouter();
 
-const badgeCount = computed(() => notifications.pendingInvites.value.length);
+const badgeCount = computed(
+  () => notifications.pendingInvites.value.length + (props.dueSoonTasks?.length ?? 0)
+);
 
 const dropdownItems = computed(() => {
   const invites = notifications.pendingInvites.value;
-  if (invites.length === 0) {
+  const dueSoon = props.dueSoonTasks ?? [];
+  const groups: { label: string; icon?: string; click?: () => void; disabled?: boolean }[][] = [];
+
+  if (invites.length > 0) {
+    groups.push(
+      invites.map((inv) => ({
+        label: `Pozvání: ${inv.projectName}`,
+        icon: 'i-heroicons-user-plus',
+        click: () => acceptInvite(inv)
+      }))
+    );
+  }
+  if (dueSoon.length > 0) {
+    groups.push(
+      dueSoon.map((t) => {
+        const d = new Date(t.dueDate!);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        d.setHours(0, 0, 0, 0);
+        const isToday = d.getTime() === today.getTime();
+        return {
+          label: (isToday ? 'Dnes: ' : 'Zítra: ') + t.title,
+          icon: 'i-heroicons-calendar-days',
+          click: () => goToTask(t)
+        };
+      })
+    );
+  }
+  if (groups.length === 0) {
     return [[{ label: 'Žádná nová oznámení', disabled: true }]];
   }
-  return [
-    invites.map((inv) => ({
-      label: `Pozvání: ${inv.projectName}`,
-      icon: 'i-heroicons-user-plus',
-      click: () => acceptInvite(inv)
-    }))
-  ];
+  return groups;
 });
+
+function goToTask(task: TaskItem) {
+  router.push({ path: `/projects/${task.projectId}`, query: { taskId: task.id } });
+}
 
 onMounted(() => {
   if (auth.user.value) {

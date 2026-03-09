@@ -47,6 +47,15 @@
             <div class="i-heroicons-user w-4 h-4 text-gray-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Řešitel: {{ task.assignee }}</span>
           </div>
+          <UBadge
+            v-for="lid in (task.labelIds || [])"
+            :key="lid"
+            :color="(taskLabelsById[lid]?.color as any) || 'gray'"
+            variant="soft"
+            size="sm"
+          >
+            {{ taskLabelsById[lid]?.name ?? lid }}
+          </UBadge>
           <UBadge v-if="task.priority" :color="priorityBadgeColor" variant="soft" size="sm">
             {{ task.priority }}
           </UBadge>
@@ -310,6 +319,7 @@ const emit = defineEmits<{
 const auth = useAuth();
 const firestoreTasks = useFirestoreTasks();
 const scrumBoard = useScrumBoardStore();
+const { byId: taskLabelsById } = useTaskLabels();
 
 const newComment = ref('');
 const isSubmittingComment = ref(false);

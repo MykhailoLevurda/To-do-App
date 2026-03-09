@@ -12,11 +12,22 @@
     draggable="true"
   >
     <template #header>
-      <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center justify-between gap-2 flex-wrap">
         <h3 class="font-semibold text-sm truncate min-w-0">{{ task.title }}</h3>
-        <UBadge :color="priorityColor" variant="soft" size="xs" class="shrink-0">
-          {{ task.priority }}
-        </UBadge>
+        <div class="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+          <UBadge
+            v-for="lid in (task.labelIds || [])"
+            :key="lid"
+            :color="(taskLabelsById[lid]?.color as any) || 'gray'"
+            variant="soft"
+            size="xs"
+          >
+            {{ taskLabelsById[lid]?.name ?? lid }}
+          </UBadge>
+          <UBadge :color="priorityColor" variant="soft" size="xs">
+            {{ task.priority }}
+          </UBadge>
+        </div>
       </div>
     </template>
 
@@ -55,6 +66,8 @@
 <script setup lang="ts">
 import type { TaskItem } from '~/stores/todos';
 import { UserIcon, ChartBarIcon } from '@heroicons/vue/24/solid';
+
+const { byId: taskLabelsById } = useTaskLabels();
 
 const props = withDefaults(
   defineProps<{ task: TaskItem; completed?: boolean }>(),

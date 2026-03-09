@@ -14,10 +14,11 @@ const currentProject = computed(() => {
   return projectsStore.getProjectById(projectId.value);
 });
 
-const viewMode = ref(0); // 0 = Board, 1 = Backlog
+const viewMode = ref(0); // 0 = Board, 1 = Backlog, 2 = Kalendář
 const viewTabs = [
   { label: 'Board', icon: 'i-heroicons-squares-2x2' },
-  { label: 'Backlog', icon: 'i-heroicons-list-bullet' }
+  { label: 'Backlog', icon: 'i-heroicons-list-bullet' },
+  { label: 'Kalendář', icon: 'i-heroicons-calendar-days' }
 ];
 const openTaskIdFromBacklog = ref<string | null>(null);
 
@@ -25,6 +26,19 @@ function openTaskFromBacklog(task: { id: string }) {
   openTaskIdFromBacklog.value = task.id;
   viewMode.value = 0;
 }
+
+// Otevřít úkol z query (např. z oznámení „Termíny“ ve zvonku)
+watch(
+  () => route.query.taskId,
+  (taskId) => {
+    if (taskId && typeof taskId === 'string') {
+      openTaskIdFromBacklog.value = taskId;
+      viewMode.value = 0;
+      router.replace({ path: route.path, query: {} });
+    }
+  },
+  { immediate: true }
+);
 
 const showDeleteModal = ref(false);
 const isDeleting = ref(false);
@@ -209,6 +223,11 @@ watch(currentProject, (project) => {
       @clear-open-task-id="openTaskIdFromBacklog = null"
     />
     <BacklogView
+      v-else-if="viewMode === 1"
+      :project-id="projectId"
+      @select="openTaskFromBacklog"
+    />
+    <CalendarView
       v-else
       :project-id="projectId"
       @select="openTaskFromBacklog"

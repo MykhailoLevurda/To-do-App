@@ -34,7 +34,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+      <div class="grid grid-cols-2 gap-4 mt-4">
         <UCard>
           <div class="text-center">
             <div class="text-2xl font-bold text-blue-600">{{ projectTasks.length }}</div>
@@ -57,15 +57,18 @@
       </div>
     </div>
 
-    <div v-else-if="columns.length" class="md:overflow-x-auto md:overflow-y-hidden pb-2 -mx-1 px-1 md:scroll-smooth">
-      <div class="flex flex-col gap-4 md:flex-row md:flex-nowrap md:min-w-max md:gap-6">
+    <div v-else-if="columns.length" class="overflow-x-hidden">
+      <div
+        class="grid gap-3 md:gap-4 pb-2"
+        :style="{ gridTemplateColumns: columnsGridTemplate }"
+      >
         <!-- Pracovní sloupce -->
         <div
           v-for="column in workColumns"
           :key="column.id"
-          class="column w-full min-w-0 md:w-[280px] md:min-w-[280px] md:flex-shrink-0"
+          class="column min-w-0"
         >
-          <UCard class="h-full">
+          <UCard>
             <template #header>
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
@@ -82,7 +85,7 @@
             </template>
 
             <div
-              class="space-y-3 min-h-[400px] drop-zone"
+              class="space-y-3 min-h-[200px] drop-zone"
               @drop="handleDrop($event, column.id)"
               @dragover.prevent="handleDragOver($event)"
               @dragenter.prevent="handleDragEnter($event)"
@@ -111,9 +114,9 @@
         <!-- Hotové úkoly – vpravo, šedé pozadí, přeškrtnuté -->
         <div
           v-if="completedColumn"
-          class="column w-full min-w-0 md:w-[280px] md:min-w-[280px] md:flex-shrink-0"
+          class="column min-w-0"
         >
-        <UCard class="h-full bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+        <UCard class="bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700">
           <template #header>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
@@ -130,7 +133,7 @@
           </template>
 
           <div
-            class="space-y-3 min-h-[400px] drop-zone completed-column"
+            class="space-y-3 min-h-[200px] drop-zone completed-column"
             @drop="handleDrop($event, completedColumn.id)"
             @dragover.prevent="handleDragOver($event)"
             @dragenter.prevent="handleDragEnter($event)"
@@ -207,15 +210,28 @@
           </UFormGroup>
 
           <UFormGroup label="Řešitel">
-            <UInput
-              v-model="newTask.assignee"
-              :placeholder="currentUserDisplayName || 'Jméno řešitele'"
+            <USelect
+              v-model="newTask.assigneeId"
+              :options="memberOptions"
+              placeholder="Vyberte člena týmu"
+              value-attribute="value"
+              @update:model-value="(v: string) => { newTask.assignee = memberOptions.find(o => o.value === v)?.label ?? ''; }"
             />
-            <p v-if="currentUserDisplayName" class="text-xs text-gray-500 mt-1">
-              Přihlášen: {{ currentUserDisplayName }}
-            </p>
           </UFormGroup>
-
+          <UFormGroup label="Štítky">
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                v-for="label in LABEL_PRESETS"
+                :key="label.id"
+                size="xs"
+                :variant="newTask.labelIds?.includes(label.id) ? 'solid' : 'soft'"
+                :color="label.color as any"
+                @click="toggleNewTaskLabel(label.id)"
+              >
+                {{ label.name }}
+              </UButton>
+            </div>
+          </UFormGroup>
           <UFormGroup label="Termín">
             <input
               v-model="newTask.dueDate"
@@ -267,9 +283,28 @@
           </div>
 
           <UFormGroup label="Řešitel">
-            <UInput v-model="editingTask.assignee" placeholder="Jméno řešitele" />
+            <USelect
+              v-model="editingTask.assigneeId"
+              :options="memberOptions"
+              placeholder="Vyberte člena týmu"
+              value-attribute="value"
+              @update:model-value="(v: string) => { editingTask.assignee = memberOptions.find(o => o.value === v)?.label ?? ''; }"
+            />
           </UFormGroup>
-
+          <UFormGroup label="Štítky">
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                v-for="label in LABEL_PRESETS"
+                :key="label.id"
+                size="xs"
+                :variant="editingTask.labelIds?.includes(label.id) ? 'solid' : 'soft'"
+                :color="label.color as any"
+                @click="toggleEditTaskLabel(label.id)"
+              >
+                {{ label.name }}
+              </UButton>
+            </div>
+          </UFormGroup>
           <UFormGroup label="Termín">
             <input
               v-model="editingTask.dueDate"
@@ -331,6 +366,15 @@ const completedColumn = computed(() => {
   return cols[cols.length - 1];
 });
 
+/** Počet sloupců pro CSS grid – všechny se vejdou do šířky (žádný horizontální scroll) */
+const totalColumns = computed(() => {
+  return workColumns.value.length + (completedColumn.value ? 1 : 0);
+});
+const columnsGridTemplate = computed(() => {
+  const n = Math.max(1, totalColumns.value);
+  return `repeat(${n}, minmax(0, 1fr))`;
+});
+
 const projectTasks = computed(() => {
   return scrumBoard.tasks.filter(task => task.projectId === props.projectId);
 });
@@ -371,10 +415,12 @@ const newTask = ref({
   title: '',
   description: '',
   priority: 'medium' as 'low' | 'medium' | 'high',
+  assigneeId: '' as string,
   assignee: '',
   storyPoints: 0,
-  status: '', // vyplníme při otevření modalu z prvního sloupce
-  dueDate: ''
+  status: '',
+  dueDate: '',
+  labelIds: [] as string[]
 });
 
 const priorityOptions = [
@@ -387,6 +433,23 @@ const statusOptions = computed(() =>
   columns.value.map(col => ({ label: col.title, value: col.id }))
 );
 
+/** Možnosti přiřazení: členové týmu + vlastník projektu */
+const memberOptions = computed(() => {
+  const p = currentProject.value;
+  if (!p) return [{ value: '', label: 'Nepřiřazeno' }];
+  const opts: { value: string; label: string }[] = [{ value: '', label: 'Nepřiřazeno' }];
+  const members = p.teamMembers || [];
+  members.forEach((m) => {
+    opts.push({ value: m.userId, label: m.displayName || m.email || m.userId });
+  });
+  if (p.createdBy && !members.some((m) => m.userId === p.createdBy)) {
+    opts.push({ value: p.createdBy, label: 'Vlastník projektu' });
+  }
+  return opts;
+});
+
+const { LABEL_PRESETS } = useTaskLabels();
+
 const currentUserDisplayName = computed(() => {
   if (!auth.user.value) return null;
   return auth.user.value.displayName || auth.user.value.email || null;
@@ -394,9 +457,18 @@ const currentUserDisplayName = computed(() => {
 
 function openAddTaskModal() {
   if (auth.user.value) {
-    newTask.value.assignee = auth.user.value.displayName || auth.user.value.email || '';
+    const myId = auth.user.value.uid;
+    const me = memberOptions.value.find((o) => o.value === myId);
+    if (me) {
+      newTask.value.assigneeId = me.value;
+      newTask.value.assignee = me.label;
+    } else {
+      newTask.value.assigneeId = '';
+      newTask.value.assignee = '';
+    }
   }
   newTask.value.status = columns.value[0]?.id ?? '';
+  newTask.value.labelIds = [];
   showAddTaskModal.value = true;
 }
 
@@ -430,22 +502,26 @@ async function addTask() {
       title,
       description: newTask.value.description?.trim(),
       priority: newTask.value.priority,
-      assignee: newTask.value.assignee?.trim(),
+      assigneeId: newTask.value.assigneeId || undefined,
+      assignee: newTask.value.assignee?.trim() || undefined,
       storyPoints: newTask.value.storyPoints ?? 0,
       status: statusId,
       projectId: props.projectId,
       dueDate: newTask.value.dueDate ? new Date(newTask.value.dueDate) : undefined,
-      backlogOrder: firstStatusId === statusId ? maxOrder + 1 : 0
+      backlogOrder: firstStatusId === statusId ? maxOrder + 1 : 0,
+      labelIds: newTask.value.labelIds?.length ? newTask.value.labelIds : undefined
     });
     if (id) {
       newTask.value = {
         title: '',
         description: '',
         priority: 'medium',
+        assigneeId: '',
         assignee: '',
         storyPoints: 0,
         status: columns.value[0]?.id ?? '',
-        dueDate: ''
+        dueDate: '',
+        labelIds: []
       };
       showAddTaskModal.value = false;
       toast.add({ title: 'Úkol byl vytvořen', color: 'green' });
@@ -460,11 +536,34 @@ async function addTask() {
   }
 }
 
+function toggleNewTaskLabel(labelId: string) {
+  const ids = newTask.value.labelIds || [];
+  if (ids.includes(labelId)) {
+    newTask.value.labelIds = ids.filter((id) => id !== labelId);
+  } else {
+    newTask.value.labelIds = [...ids, labelId];
+  }
+}
+
+function toggleEditTaskLabel(labelId: string) {
+  if (!editingTask.value) return;
+  const ids = editingTask.value.labelIds || [];
+  if (ids.includes(labelId)) {
+    editingTask.value.labelIds = ids.filter((id) => id !== labelId);
+  } else {
+    editingTask.value.labelIds = [...ids, labelId];
+  }
+}
+
 function editTask(task: TaskItem) {
-  const taskCopy: any = { ...task };
+  const taskCopy: any = { ...task, labelIds: task.labelIds ? [...task.labelIds] : [] };
   if (task.dueDate) {
     const d = new Date(task.dueDate);
     taskCopy.dueDate = d.toISOString().split('T')[0];
+  }
+  if (taskCopy.assigneeId === undefined) {
+    const opt = memberOptions.value.find((o) => o.label === task.assignee);
+    taskCopy.assigneeId = opt?.value ?? '';
   }
   editingTask.value = taskCopy;
   showEditTaskModal.value = true;
@@ -477,9 +576,11 @@ async function updateTask() {
     title: editingTask.value.title,
     description: editingTask.value.description,
     priority: editingTask.value.priority,
+    assigneeId: editingTask.value.assigneeId,
     assignee: editingTask.value.assignee,
     storyPoints: editingTask.value.storyPoints,
-    status: editingTask.value.status
+    status: editingTask.value.status,
+    labelIds: editingTask.value.labelIds ?? []
   };
   if (editingTask.value.dueDate) {
     updates.dueDate = typeof editingTask.value.dueDate === 'string'

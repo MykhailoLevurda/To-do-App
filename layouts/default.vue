@@ -12,6 +12,7 @@ import {
 const auth = useAuth()
 const projectsStore = useProjectsStore()
 const firestoreProjects = useFirestoreProjects()
+const scrumBoard = useScrumBoardStore()
 const route = useRoute()
 
 // Načítat projekty globálně pro celou aplikaci (sidebar, stránka Uživatelé, atd.) – jen na klientu
@@ -76,6 +77,25 @@ const projectId = computed(() => {
   if (id && typeof id === 'string') return id
   const m = route.path.match(/^\/projects\/([^/]+)/)
   return m ? m[1] : ''
+})
+
+// Úkoly s termínem dnes nebo zítra (pro zvoněk – upozornění)
+const dueSoonTasks = computed(() => {
+  const pid = projectId.value
+  if (!pid) return []
+  const tasks = scrumBoard.tasks.filter((t) => t.projectId === pid && t.dueDate)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const endTomorrow = new Date(tomorrow)
+  endTomorrow.setHours(23, 59, 59, 999)
+  return tasks.filter((t) => {
+    const d = new Date(t.dueDate!)
+    d.setHours(0, 0, 0, 0)
+    const due = d.getTime()
+    return due === today.getTime() || (due >= tomorrow.getTime() && due <= endTomorrow.getTime())
+  })
 })
 
 const projectTime = useProjectTime()
@@ -229,7 +249,7 @@ onBeforeUnmount(() => {
 
       </div>
     </aside>
-      <main class="flex flex-col min-h-screen">
+      <main class="flex flex-col">
         <header class="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-800 gap-4">
           <div class="flex items-center gap-4 min-w-0 flex-1">
             <span v-if="auth.user.value" class="font-medium shrink-0">
@@ -255,7 +275,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="flex items-center gap-2 shrink-0">
             <!-- Notifications (zvonek) -->
-            <NotificationBell />
+            <NotificationBell :due-soon-tasks="dueSoonTasks" />
 
             <!-- Color Mode Toggle -->
             <UButton
