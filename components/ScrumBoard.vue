@@ -57,13 +57,13 @@
       </div>
     </div>
 
-    <div v-else-if="columns.length" class="flex gap-6 overflow-x-auto">
-      <!-- Pracovní sloupce -->
-      <div class="grid gap-6 flex-1 min-w-0" :class="columnsGridClass">
+    <div v-else-if="columns.length" class="md:overflow-x-auto md:overflow-y-hidden pb-2 -mx-1 px-1 md:scroll-smooth">
+      <div class="flex flex-col gap-4 md:flex-row md:flex-nowrap md:min-w-max md:gap-6">
+        <!-- Pracovní sloupce -->
         <div
           v-for="column in workColumns"
           :key="column.id"
-          class="column min-w-[280px]"
+          class="column w-full min-w-0 md:w-[280px] md:min-w-[280px] md:flex-shrink-0"
         >
           <UCard class="h-full">
             <template #header>
@@ -107,13 +107,12 @@
             </div>
           </UCard>
         </div>
-      </div>
 
-      <!-- Hotové úkoly – vpravo, šedé pozadí, přeškrtnuté -->
-      <div
-        v-if="completedColumn"
-        class="column min-w-[280px] max-w-[320px] flex-shrink-0"
-      >
+        <!-- Hotové úkoly – vpravo, šedé pozadí, přeškrtnuté -->
+        <div
+          v-if="completedColumn"
+          class="column w-full min-w-0 md:w-[280px] md:min-w-[280px] md:flex-shrink-0"
+        >
         <UCard class="h-full bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700">
           <template #header>
             <div class="flex items-center justify-between">
@@ -156,6 +155,7 @@
             </div>
           </div>
         </UCard>
+        </div>
       </div>
     </div>
     <div v-else class="text-center py-12 text-gray-500">
@@ -330,8 +330,6 @@ const completedColumn = computed(() => {
   if (cols.length < 2) return null;
   return cols[cols.length - 1];
 });
-
-const columnsGridClass = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4';
 
 const projectTasks = computed(() => {
   return scrumBoard.tasks.filter(task => task.projectId === props.projectId);
