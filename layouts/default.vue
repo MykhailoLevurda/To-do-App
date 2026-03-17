@@ -1,11 +1,8 @@
 <script setup lang="ts">
 import {
   FolderIcon,
-  CalendarIcon,
   UsersIcon,
-  ChatBubbleLeftIcon,
   ChartBarIcon,
-  PencilSquareIcon,
   ClockIcon,
 } from '@heroicons/vue/24/outline'
 
@@ -218,33 +215,23 @@ onBeforeUnmount(() => {
               Aktivita
             </NuxtLink>
 
-            <button class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
-              <CalendarIcon class="w-5 h-5" />
-              Kalendář (brzy)
-            </button>
-
-            <button class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
-              <PencilSquareIcon class="w-5 h-5" />
-              Poznámky (brzy)
-            </button>
+            <NuxtLink
+              to="/reporty"
+              class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+              :class="route.path === '/reporty' ? 'bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 font-medium' : 'text-gray-700 dark:text-gray-300'"
+            >
+              <ChartBarIcon class="w-5 h-5" />
+              Reporty
+            </NuxtLink>
 
             <NuxtLink 
               to="/users" 
               class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+              :class="route.path === '/users' ? 'bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 font-medium' : 'text-gray-700 dark:text-gray-300'"
             >
               <UsersIcon class="w-5 h-5" />
               Uživatelé
             </NuxtLink>
-
-            <button class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
-              <ChatBubbleLeftIcon class="w-5 h-5" />
-              Diskuze (brzy)
-            </button>
-
-            <button class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 opacity-50 cursor-not-allowed" disabled>
-              <ChartBarIcon class="w-5 h-5" />
-              Aktivity (brzy)
-            </button>
           </nav>
 
       </div>
