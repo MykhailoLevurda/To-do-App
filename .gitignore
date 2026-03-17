@@ -35,3 +35,6 @@ firebase-service-account.json
 *.sln
 *.sw?
 .vercel
+
+# Nahrané soubory (server upload)
+public/uploads

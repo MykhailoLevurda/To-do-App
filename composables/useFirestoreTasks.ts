@@ -77,8 +77,12 @@ export const useFirestoreTasks = () => {
     }
   };
 
-  const addTask = async (task: Omit<TaskItem, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (!auth.user.value) return null;
+  const addTask = async (task: Omit<TaskItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ id: string | null; error?: string }> => {
+    if (!auth.user.value) return { id: null, error: 'Nejste přihlášeni.' };
+    if (!firestore) {
+      console.error('[Firestore Tasks] Firestore není k dispozici.');
+      return { id: null, error: 'Databáze není připojena. Obnovte stránku.' };
+    }
 
     try {
       const tasksRef = collection(firestore, 'tasks');
@@ -98,9 +102,11 @@ export const useFirestoreTasks = () => {
         });
       }
 
-      return docRef.id;
-    } catch {
-      return null;
+      return { id: docRef.id };
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      console.error('[Firestore Tasks] addTask failed:', e);
+      return { id: null, error: msg || 'Nepodařilo se vytvořit úkol.' };
     }
   };
 

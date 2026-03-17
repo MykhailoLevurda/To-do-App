@@ -232,22 +232,20 @@
               </UButton>
             </div>
           </UFormGroup>
-          <UFormGroup label="Termín">
+          <UFormGroup label="Termín (doporučeno)">
             <input
               v-model="newTask.dueDate"
               type="date"
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-900"
             />
           </UFormGroup>
-        </UForm>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton variant="ghost" @click="showAddTaskModal = false" :disabled="isAddingTask">Zrušit</UButton>
-            <UButton form="addTaskForm" type="submit" :disabled="!newTask.title.trim() || isAddingTask" :loading="isAddingTask">
+          <div class="flex justify-end gap-2 pt-2">
+            <UButton variant="ghost" type="button" @click="showAddTaskModal = false" :disabled="isAddingTask">Zrušit</UButton>
+            <UButton type="button" :disabled="!newTask.title.trim() || isAddingTask" :loading="isAddingTask" @click="addTask">
               Vytvořit úkol
             </UButton>
           </div>
-        </template>
+        </UForm>
       </UCard>
     </UModal>
 
@@ -312,13 +310,11 @@
               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-900"
             />
           </UFormGroup>
-        </UForm>
-        <template #footer>
-          <div class="flex justify-end gap-2">
-            <UButton variant="ghost" @click="showEditTaskModal = false">Zrušit</UButton>
-            <UButton form="editTaskForm" type="submit">Uložit</UButton>
+          <div class="flex justify-end gap-2 pt-2">
+            <UButton variant="ghost" type="button" @click="showEditTaskModal = false">Zrušit</UButton>
+            <UButton type="button" @click="updateTask">Uložit</UButton>
           </div>
-        </template>
+        </UForm>
       </UCard>
     </UModal>
   </div>
@@ -473,16 +469,22 @@ function openAddTaskModal() {
 }
 
 async function addTask() {
+  const toast = useToast();
   const title = newTask.value.title?.trim();
-  if (!title) return;
+  if (!title) {
+    toast.add({ title: 'Zadejte název úkolu', color: 'amber' });
+    return;
+  }
+  if (!newTask.value.dueDate?.trim()) {
+    toast.add({ title: 'Vyberte datum (termín úkolu). Úkol lze vytvořit i bez data – doplňte termín pro lepší přehled.', color: 'amber' });
+    // Pokračujeme – úkol vytvoříme i bez data
+  }
   if (!auth.isAuthenticated) {
-    const toast = useToast();
     toast.add({ title: 'Pro přidání úkolu se přihlaste', color: 'red' });
     return;
   }
 
   isAddingTask.value = true;
-  const toast = useToast();
 
   try {
     const statusId = newTask.value.status || columns.value[0]?.id;
@@ -498,7 +500,7 @@ async function addTask() {
     const maxOrder = backlogTasks.length
       ? Math.max(...backlogTasks.map((t) => t.backlogOrder ?? 0), 0)
       : 0;
-    const id = await firestoreTasks.addTask({
+    const result = await firestoreTasks.addTask({
       title,
       description: newTask.value.description?.trim(),
       priority: newTask.value.priority,
@@ -511,7 +513,7 @@ async function addTask() {
       backlogOrder: firstStatusId === statusId ? maxOrder + 1 : 0,
       labelIds: newTask.value.labelIds?.length ? newTask.value.labelIds : undefined
     });
-    if (id) {
+    if (result.id) {
       newTask.value = {
         title: '',
         description: '',
@@ -526,11 +528,11 @@ async function addTask() {
       showAddTaskModal.value = false;
       toast.add({ title: 'Úkol byl vytvořen', color: 'green' });
     } else {
-      toast.add({ title: 'Nepodařilo se vytvořit úkol', color: 'red' });
+      toast.add({ title: result.error || 'Nepodařilo se vytvořit úkol', color: 'red' });
     }
   } catch (error: any) {
     console.error('[ScrumBoard] Error adding task:', error);
-    toast.add({ title: error.message || 'Chyba při vytváření úkolu', color: 'red' });
+    toast.add({ title: error?.message || 'Chyba při vytváření úkolu', color: 'red' });
   } finally {
     isAddingTask.value = false;
   }

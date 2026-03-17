@@ -9,7 +9,6 @@ export default defineNuxtPlugin(() => {
     apiKey: config.public.firebaseApiKey,
     authDomain: config.public.firebaseAuthDomain,
     projectId: config.public.firebaseProjectId,
-    storageBucket: config.public.firebaseStorageBucket,
     messagingSenderId: config.public.firebaseMessagingSenderId,
     appId: config.public.firebaseAppId
   };
@@ -33,7 +32,7 @@ export default defineNuxtPlugin(() => {
     };
   }
 
-  // Initialize Firebase
+  // Initialize Firebase (Storage nepoužíváme – přílohy jdou přes server API na disk)
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const firestore = getFirestore(app);

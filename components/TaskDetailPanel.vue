@@ -172,6 +172,28 @@
               Přidat odkaz
             </UButton>
           </div>
+          <div class="mt-2 flex items-center gap-2">
+            <input
+              ref="fileInputRef"
+              type="file"
+              class="hidden"
+              :accept="allowedFileTypes"
+              @change="onFileSelected"
+            />
+            <UButton
+              icon="i-heroicons-arrow-up-tray"
+              size="sm"
+              variant="soft"
+              :loading="attachmentUpload.uploading"
+              :disabled="!task?.id || attachmentUpload.uploading"
+              @click="fileInputRef?.click()"
+            >
+              Nahrát soubor (max {{ attachmentUpload.maxFileSizeMb }} MB)
+            </UButton>
+            <p v-if="attachmentUpload.uploadError" class="text-xs text-red-600 dark:text-red-400">
+              {{ attachmentUpload.uploadError }}
+            </p>
+          </div>
         </section>
 
         <!-- Komentáře -->
@@ -335,6 +357,10 @@ const taskAttachmentLinks = computed(() => task.value?.attachmentLinks ?? []);
 const newChecklistTitle = ref('');
 const newAttachmentName = ref('');
 const newAttachmentUrl = ref('');
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+const attachmentUpload = useTaskAttachmentUpload();
+const allowedFileTypes = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip';
 
 function genId() {
   return `cl-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -388,6 +414,27 @@ async function removeAttachmentLink(id: string) {
   const list = taskAttachmentLinks.value.filter((a: { id: string }) => a.id !== id);
   const ok = await firestoreTasks.updateTask(task.value.id, { attachmentLinks: list });
   if (ok) scrumBoard.updateTask(task.value.id, { attachmentLinks: list });
+}
+
+async function onFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file || !task.value) return;
+  const result = await attachmentUpload.uploadFile(task.value.id, file);
+  input.value = '';
+  if (result) {
+    const list = [...taskAttachmentLinks.value, { id: genId(), name: result.name, url: result.url }];
+    const ok = await firestoreTasks.updateTask(task.value.id, { attachmentLinks: list });
+    if (ok) {
+      scrumBoard.updateTask(task.value.id, { attachmentLinks: list });
+      useToast().add({ title: 'Soubor byl nahrán', color: 'green' });
+    } else {
+      useToast().add({ title: 'Nepodařilo se uložit odkaz na soubor', color: 'red' });
+    }
+  } else {
+    const err = (attachmentUpload.uploadError as { value?: string })?.value;
+    if (err) useToast().add({ title: err, color: 'red' });
+  }
 }
 
 const completedStatusId = computed(() => props.completedStatusId ?? 'done');

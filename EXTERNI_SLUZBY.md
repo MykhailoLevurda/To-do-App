@@ -59,6 +59,13 @@ Aplikace Scrum Board používá **pouze Firebase** pro přihlašování, projekt
 
 Pravidla přístupu jsou v souboru `firestore.rules`.
 
+### Přílohy úkolů (nahrávání souborů)
+
+- **Nepoužívá se Firebase Storage** (není potřeba upgrade na placený plán).
+- Soubory se nahrávají přes server API `POST /api/upload` a ukládají na disk do `public/uploads/taskAttachments/{taskId}/`. Odkaz (`/uploads/...`) se ukládá do úkolu v poli `attachmentLinks`.
+- Vyžaduje přihlášeného uživatele (Bearer token z Firebase Auth). Maximální velikost souboru: 5 MB.
+- Při nasazení na VPS (Forpsi apod.) je složka `public/uploads` trvalá. Na serverless (Vercel) by soubory nebyly trvalé – pro produkci na Vercel zvažte externí úložiště (Cloudinary, R2) nebo nasazení na server s diskem.
+
 ---
 
 ## Pozvánky (Model A – pozvánka přímo do projektu)

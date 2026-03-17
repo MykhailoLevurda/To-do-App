@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 const config = useRuntimeConfig()
 useHead({ titleTemplate: (t?: string) => t ? `${t} · ${config.public.appName}` : config.public.appName })
 </script>
@@ -6,4 +6,6 @@ useHead({ titleTemplate: (t?: string) => t ? `${t} · ${config.public.appName}` 
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>
+  <!-- Komponenta pro zobrazení toastů (useToast()) – Nuxt UI v2 -->
+  <UNotifications />
 </template>
