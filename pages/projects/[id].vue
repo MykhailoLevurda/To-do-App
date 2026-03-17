@@ -14,11 +14,12 @@ const currentProject = computed(() => {
   return projectsStore.getProjectById(projectId.value);
 });
 
-const viewMode = ref(0); // 0 = Board, 1 = Backlog, 2 = Kalendář
+const viewMode = ref(0); // 0 = Board, 1 = Backlog, 2 = Kalendář, 3 = Sprinty
 const viewTabs = [
   { label: 'Board', icon: 'i-heroicons-squares-2x2' },
   { label: 'Backlog', icon: 'i-heroicons-list-bullet' },
-  { label: 'Kalendář', icon: 'i-heroicons-calendar-days' }
+  { label: 'Kalendář', icon: 'i-heroicons-calendar-days' },
+  { label: 'Sprinty', icon: 'i-heroicons-rocket-launch' }
 ];
 const openTaskIdFromBacklog = ref<string | null>(null);
 
@@ -228,9 +229,14 @@ watch(currentProject, (project) => {
       @select="openTaskFromBacklog"
     />
     <CalendarView
-      v-else
+      v-else-if="viewMode === 2"
       :project-id="projectId"
       @select="openTaskFromBacklog"
+    />
+    <SprintsView
+      v-else
+      :project-id="projectId"
+      @select-task="openTaskFromBacklog"
     />
   </div>
 

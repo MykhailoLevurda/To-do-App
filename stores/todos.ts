@@ -25,6 +25,8 @@ export interface TaskItem {
   backlogOrder?: number;
   /** Štítky (např. bug, feature) – id z předdefinovaných */
   labelIds?: string[];
+  /** Id sprintu, do kterého je úkol zařazen (volitelné) */
+  sprintId?: string;
 }
 
 export interface ScrumBoardState {

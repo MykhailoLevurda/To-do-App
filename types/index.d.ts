@@ -33,6 +33,22 @@ export interface ProjectStatus {
   order: number;
 }
 
+/** Stav sprintu */
+export type SprintStatus = 'planned' | 'active' | 'closed';
+
+/** Sprint v rámci projektu (vysoká priorita – plánování práce) */
+export interface Sprint {
+  id: string;
+  projectId: string;
+  name: string;
+  startDate: Date;
+  endDate: Date;
+  status: SprintStatus;
+  goal?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 /** Mapa userId → role pro rychlé kontroly v pravidlech (Owner = createdBy, není v mapě). */
 export type ProjectMemberRoles = Record<string, 'admin' | 'member'>;
 

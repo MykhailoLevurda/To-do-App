@@ -12,6 +12,7 @@ import {
   where,
   increment,
   orderBy,
+  deleteField,
   type Unsubscribe
 } from 'firebase/firestore';
 import type { TaskItem } from '~/stores/todos';
@@ -60,7 +61,8 @@ export const useFirestoreTasks = () => {
           checklist: data.checklist || [],
           attachmentLinks: data.attachmentLinks || [],
           backlogOrder: data.backlogOrder ?? 0,
-          labelIds: data.labelIds || []
+          labelIds: data.labelIds || [],
+          sprintId: data.sprintId || undefined
         };
         tasks.push(task);
       });
@@ -138,10 +140,15 @@ export const useFirestoreTasks = () => {
         }
       }
 
-      await updateDoc(taskRef, {
-        ...updates,
-        updatedAt: serverTimestamp()
-      });
+      const payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === undefined && (key === 'sprintId' || key === 'dueDate')) {
+          payload[key] = deleteField();
+        } else if (value !== undefined) {
+          payload[key] = value;
+        }
+      }
+      await updateDoc(taskRef, payload);
 
       return true;
     } catch {
