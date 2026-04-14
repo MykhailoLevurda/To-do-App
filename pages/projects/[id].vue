@@ -14,6 +14,8 @@ const currentProject = computed(() => {
   return projectsStore.getProjectById(projectId.value);
 });
 
+const { canManageProjectsAndTasks, canDeleteProject } = useProjectRole(currentProject);
+
 const viewMode = ref(0); // 0 = Board, 1 = Backlog, 2 = Kalendář, 3 = Sprinty
 const viewTabs = [
   { label: 'Board', icon: 'i-heroicons-squares-2x2' },
@@ -181,6 +183,7 @@ watch(currentProject, (project) => {
         </div>
         <div class="flex items-center gap-2">
           <UButton
+            v-if="canManageProjectsAndTasks"
             icon="i-heroicons-squares-2x2"
             variant="outline"
             @click="openStatusesModal"
@@ -189,6 +192,7 @@ watch(currentProject, (project) => {
             Stavy
           </UButton>
           <UButton
+            v-if="canManageProjectsAndTasks"
             icon="i-heroicons-pencil"
             variant="outline"
             @click="openEditModal"
@@ -196,6 +200,7 @@ watch(currentProject, (project) => {
             Upravit
           </UButton>
           <UButton
+            v-if="canDeleteProject"
             icon="i-heroicons-trash"
             variant="outline"
             color="red"
