@@ -37,8 +37,8 @@
       <div class="grid grid-cols-2 gap-4 mt-4">
         <UCard>
           <div class="text-center">
-            <div class="text-2xl font-bold text-blue-600">{{ projectTasks.length }}</div>
-            <div class="text-sm text-gray-500">Celkem úkolů</div>
+            <div class="text-2xl font-bold text-blue-600">{{ filteredProjectTasks.length }}<span v-if="hasActiveFilters" class="text-sm text-gray-400"> / {{ projectTasks.length }}</span></div>
+            <div class="text-sm text-gray-500">{{ hasActiveFilters ? 'Filtrováno úkolů' : 'Celkem úkolů' }}</div>
           </div>
         </UCard>
         <UCard>
@@ -47,6 +47,58 @@
             <div class="text-sm text-gray-500">Stavů</div>
           </div>
         </UCard>
+      </div>
+
+      <!-- Filtry -->
+      <div class="flex flex-wrap items-center gap-2 mt-4 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+        <span class="text-sm font-medium text-gray-500 shrink-0">Filtrovat:</span>
+
+        <select
+          v-model="filters.assigneeId"
+          class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900"
+        >
+          <option value="">Všichni řešitelé</option>
+          <option v-for="opt in memberOptions.slice(1)" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+
+        <select
+          v-model="filters.priority"
+          class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900"
+        >
+          <option value="">Všechny priority</option>
+          <option value="high">Vysoká</option>
+          <option value="medium">Střední</option>
+          <option value="low">Nízká</option>
+        </select>
+
+        <select
+          v-model="filters.labelId"
+          class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900"
+        >
+          <option value="">Všechny štítky</option>
+          <option v-for="label in LABEL_PRESETS" :key="label.id" :value="label.id">{{ label.name }}</option>
+        </select>
+
+        <select
+          v-if="sprints.length > 0"
+          v-model="filters.sprintId"
+          class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900"
+        >
+          <option value="">Všechny sprinty</option>
+          <option value="__none__">Bez sprintu</option>
+          <option v-for="s in sprints" :key="s.id" :value="s.id">{{ s.name }}</option>
+        </select>
+
+        <UButton
+          v-if="hasActiveFilters"
+          size="xs"
+          variant="ghost"
+          color="red"
+          icon="i-heroicons-x-mark"
+          @click="clearFilters"
+        >
+          Vymazat filtry
+        </UButton>
       </div>
     </div>
 
@@ -339,6 +391,7 @@ const projectsStore = useProjectsStore();
 const scrumBoard = useScrumBoardStore();
 const auth = useAuth();
 const firestoreTasks = useFirestoreTasks();
+const { sprints, startListening: startSprintsListening, stopListening: stopSprintsListening } = useSprints(computed(() => props.projectId));
 
 const currentProject = computed(() => projectsStore.getProjectById(props.projectId));
 
@@ -375,8 +428,38 @@ const projectTasks = computed(() => {
   return scrumBoard.tasks.filter(task => task.projectId === props.projectId);
 });
 
+// --- Filtry ---
+const filters = ref({ assigneeId: '', priority: '', labelId: '', sprintId: '' });
+
+const hasActiveFilters = computed(() =>
+  !!(filters.value.assigneeId || filters.value.priority || filters.value.labelId || filters.value.sprintId)
+);
+
+const filteredProjectTasks = computed(() => {
+  let tasks = projectTasks.value;
+  if (filters.value.assigneeId) {
+    tasks = tasks.filter(t => t.assigneeId === filters.value.assigneeId);
+  }
+  if (filters.value.priority) {
+    tasks = tasks.filter(t => t.priority === filters.value.priority);
+  }
+  if (filters.value.labelId) {
+    tasks = tasks.filter(t => t.labelIds?.includes(filters.value.labelId));
+  }
+  if (filters.value.sprintId === '__none__') {
+    tasks = tasks.filter(t => !t.sprintId);
+  } else if (filters.value.sprintId) {
+    tasks = tasks.filter(t => t.sprintId === filters.value.sprintId);
+  }
+  return tasks;
+});
+
+function clearFilters() {
+  filters.value = { assigneeId: '', priority: '', labelId: '', sprintId: '' };
+}
+
 const tasksByStatus = (statusId: string) => {
-  return projectTasks.value.filter(task => task.status === statusId);
+  return filteredProjectTasks.value.filter(task => task.status === statusId);
 };
 
 const showAddTaskModal = ref(false);
@@ -668,14 +751,21 @@ function refreshTasks() {
 onMounted(() => {
   if (auth.isAuthenticated && props.projectId) {
     firestoreTasks.startListening(props.projectId);
+    startSprintsListening();
   }
+});
+
+onUnmounted(() => {
+  stopSprintsListening();
 });
 
 watch(() => [auth.isAuthenticated, props.projectId], ([isAuth, pid]) => {
   if (isAuth && pid) {
     firestoreTasks.startListening(pid as string);
+    startSprintsListening();
   } else {
     firestoreTasks.stopListening();
+    stopSprintsListening();
     scrumBoard.clearTasks();
   }
 }, { immediate: false });
