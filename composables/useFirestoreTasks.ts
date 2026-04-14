@@ -22,60 +22,97 @@ export const useFirestoreTasks = () => {
   const firestore = $firestore;
   const auth = useAuth();
   const scrumBoardStore = useScrumBoardStore();
+  const projectsStore = useProjectsStore();
 
   let unsubscribe: Unsubscribe | null = null;
+  let projectsWatchStop: (() => void) | null = null;
+
+  const handleSnapshot = (snapshot: any) => {
+    const tasks: TaskItem[] = [];
+
+    snapshot.forEach((doc: any) => {
+      const data = doc.data();
+      const task: any = {
+        id: doc.id,
+        title: data.title,
+        description: data.description,
+        status: data.status,
+        priority: data.priority,
+        assigneeId: data.assigneeId,
+        assignee: data.assignee,
+        storyPoints: data.storyPoints,
+        projectId: data.projectId,
+        dueDate: data.dueDate?.toDate(),
+        approved: data.approved || false,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate() || new Date(),
+        checklist: data.checklist || [],
+        attachmentLinks: data.attachmentLinks || [],
+        backlogOrder: data.backlogOrder ?? 0,
+        labelIds: data.labelIds || [],
+        sprintId: data.sprintId || undefined
+      };
+      tasks.push(task);
+    });
+
+    tasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    scrumBoardStore.setTasks(tasks);
+  };
 
   const startListening = (projectId?: string) => {
     if (!auth.isAuthenticated || !auth.user.value) return;
 
     if (unsubscribe) unsubscribe();
+    if (projectsWatchStop) {
+      projectsWatchStop();
+      projectsWatchStop = null;
+    }
 
     const tasksRef = collection(firestore, 'tasks');
     const userId = auth.user.value.uid;
-    let q = query(tasksRef, where('createdBy', '==', userId));
-    
-    // Pokud je zadán projectId, filtrovat podle projektu
+
     if (projectId) {
-      q = query(tasksRef, where('createdBy', '==', userId), where('projectId', '==', projectId));
+      // Filtrovat pouze podle projektu – Firestore pravidla zajišťují, že
+      // dotaz smí číst jen člen daného projektu (owner/admin/member).
+      // Odstraněn filtr createdBy, aby členové viděli i úkoly vytvořené jinými.
+      const q = query(tasksRef, where('projectId', '==', projectId));
+      unsubscribe = onSnapshot(q, handleSnapshot);
+      return;
     }
 
-    unsubscribe = onSnapshot(q, (snapshot) => {
-      const tasks: TaskItem[] = [];
+    // Globální listener (bez projectId, např. Reporty) –
+    // dotazuje úkoly ze všech projektů uživatele přes projectId in [...].
+    const buildGlobalQuery = () => {
+      const projectIds = projectsStore.projects.map(p => p.id);
+      if (projectIds.length === 0) {
+        // Projekty se ještě nenačetly – použij fallback na createdBy
+        return query(tasksRef, where('createdBy', '==', userId));
+      }
+      // Firestore 'in' podporuje max 30 prvků; při větším počtu projektů
+      // by bylo potřeba dotazy rozdělit – pro běžné použití postačí.
+      return query(tasksRef, where('projectId', 'in', projectIds.slice(0, 30)));
+    };
 
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        const task: any = {
-          id: doc.id,
-          title: data.title,
-          description: data.description,
-          status: data.status,
-          priority: data.priority,
-          assigneeId: data.assigneeId,
-          assignee: data.assignee,
-          storyPoints: data.storyPoints,
-          projectId: data.projectId,
-          dueDate: data.dueDate?.toDate(),
-          approved: data.approved || false,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-          checklist: data.checklist || [],
-          attachmentLinks: data.attachmentLinks || [],
-          backlogOrder: data.backlogOrder ?? 0,
-          labelIds: data.labelIds || [],
-          sprintId: data.sprintId || undefined
-        };
-        tasks.push(task);
-      });
+    unsubscribe = onSnapshot(buildGlobalQuery(), handleSnapshot);
 
-      tasks.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      scrumBoardStore.tasks = tasks;
-    });
+    // Jakmile se projekty načtou (nebo změní), restartuj listener se správnými projectIds
+    projectsWatchStop = watch(
+      () => projectsStore.projects.map(p => p.id).join(','),
+      () => {
+        if (unsubscribe) unsubscribe();
+        unsubscribe = onSnapshot(buildGlobalQuery(), handleSnapshot);
+      }
+    );
   };
 
   const stopListening = () => {
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
+    }
+    if (projectsWatchStop) {
+      projectsWatchStop();
+      projectsWatchStop = null;
     }
   };
 
