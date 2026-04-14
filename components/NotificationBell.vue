@@ -26,7 +26,6 @@ const props = defineProps<{
 }>();
 
 const auth = useAuth();
-const route = useRoute();
 const notifications = useNotifications();
 const router = useRouter();
 
@@ -75,23 +74,20 @@ function goToTask(task: TaskItem) {
 }
 
 onMounted(() => {
-  if (auth.user.value) {
-    notifications.fetchPendingInvites();
-  }
+  if (auth.user.value) notifications.startListening();
+});
+
+onUnmounted(() => {
+  notifications.stopListening();
 });
 
 watch(
   () => auth.user.value,
   (user) => {
-    if (user) notifications.fetchPendingInvites();
-  },
-  { immediate: true }
+    if (user) notifications.startListening();
+    else notifications.stopListening();
+  }
 );
-
-// Obnovit při navigaci (např. po přijetí pozvánky)
-watch(() => route.path, () => {
-  if (auth.user.value) notifications.fetchPendingInvites();
-});
 
 async function acceptInvite(inv: { projectId: string; projectName: string; email: string; role: 'admin' | 'member' }) {
   const teamMembers = useTeamMembers();
