@@ -321,8 +321,29 @@ async function removeUser(user: any) {
     return;
   }
 
-  // TODO: Implementovat odebrání uživatele
-  usersList.value = usersList.value.filter(u => u.email !== user.email);
+  const teamMembers = useTeamMembers();
+  const toast = useToast();
+
+  // Odebrat uživatele ze všech projektů, kde je členem
+  const projectsWithUser = (storeProjects.value ?? []).filter(p =>
+    (p.teamMembers || []).some((m: any) => m.email === user.email)
+  );
+
+  if (projectsWithUser.length === 0) {
+    usersList.value = usersList.value.filter(u => u.email !== user.email);
+    return;
+  }
+
+  const results = await Promise.all(
+    projectsWithUser.map(p => teamMembers.removeTeamMember(p.id, user.email))
+  );
+
+  if (results.every(Boolean)) {
+    usersList.value = usersList.value.filter(u => u.email !== user.email);
+    toast.add({ title: `${user.email} byl odebrán`, color: 'green' });
+  } else {
+    toast.add({ title: 'Nepodařilo se odebrat uživatele', color: 'red' });
+  }
 }
 
 // Načíst uživatele ze všech projektů

@@ -135,7 +135,7 @@ watch(() => auth.user.value?.uid, () => loadActivity());
                 v-for="(entry, i) in entries"
                 :key="entry.userId + entry.projectId"
                 class="border-b border-gray-100 dark:border-gray-800"
-                :class="{ 'bg-primary-50 dark:bg-primary-950/30': entry.userId === auth.user?.uid }"
+                :class="{ 'bg-primary-50 dark:bg-primary-950/30': entry.userId === auth.user.value?.uid }"
               >
                 <td class="py-2 pr-4">{{ getUserDisplayName(entry, project) }}</td>
                 <td class="py-2 text-right font-mono tabular-nums">{{ formatDuration(entry.totalSeconds) }}</td>
