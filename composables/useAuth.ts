@@ -32,8 +32,6 @@ export const useAuth = () => {
   const error = useState<string | null>('auth-error', () => null);
   const authListenerSet = useState('auth-listener-set', () => false);
 
-  console.log('[Auth] useAuth composable initialized, process.client:', process.client);
-
   // Convert Firebase User to plain object
   const toPlainUser = (firebaseUser: User | null): PlainUser | null => {
     if (!firebaseUser) return null;
@@ -47,27 +45,17 @@ export const useAuth = () => {
 
   // Initialize auth state listener (only once)
   if (process.client && !authListenerSet.value) {
-    console.log('[Auth] Setting up onAuthStateChanged listener (first time)');
     authListenerSet.value = true;
-    
+
     onAuthStateChanged(auth, async (firebaseUser) => {
-      console.log('[Auth] Auth state changed:', firebaseUser ? `User: ${firebaseUser.uid}` : 'No user');
-      console.log('[Auth] Setting loading to false');
-      
-      // Convert to plain object to avoid Vue reactivity issues with Firebase objects
       user.value = toPlainUser(firebaseUser);
       loading.value = false;
-      
+
       if (firebaseUser) {
-        // Create/update user document in Firestore
         await ensureUserDocument(firebaseUser);
-        console.log('[Auth] User document ensured for:', firebaseUser.uid);
       }
-      
-      console.log('[Auth] Current state - user:', user.value?.uid, 'loading:', loading.value);
     });
   } else if (!process.client) {
-    console.log('[Auth] SSR mode, setting loading to false immediately');
     loading.value = false;
   }
 
@@ -158,8 +146,6 @@ export const useAuth = () => {
     try {
       error.value = null;
       
-      console.log('[Auth] Signing out user:', user.value?.uid);
-      
       // Clear all stores before signing out
       const scrumBoardStore = useScrumBoardStore();
       const projectsStore = useProjectsStore();
@@ -178,8 +164,6 @@ export const useAuth = () => {
       
       await firebaseSignOut(auth);
       user.value = null;
-      
-      console.log('[Auth] User signed out successfully');
     } catch (err: any) {
       error.value = err.message;
       console.error('[Auth] Sign out error:', err);
@@ -215,7 +199,6 @@ export const useAuth = () => {
         };
       }
 
-      console.log('[Auth] Display name updated:', displayName);
     } catch (err: any) {
       error.value = err.message;
       console.error('[Auth] Error updating display name:', err);
@@ -247,7 +230,6 @@ export const useAuth = () => {
       // Update password
       await updatePassword(currentUser, newPassword);
 
-      console.log('[Auth] Password changed successfully');
     } catch (err: any) {
       error.value = err.message;
       console.error('[Auth] Error changing password:', err);

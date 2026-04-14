@@ -87,9 +87,5 @@ service cloud.firestore {
       allow update, delete: if request.auth != null
         && resource.data.userId == request.auth.uid;
     }
-
-    match /{document=**} {
-      allow read, write: if request.time < timestamp.date(2025, 11, 20);
-    }
   }
 }

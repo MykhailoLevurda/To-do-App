@@ -3,12 +3,12 @@
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-lg font-semibold">Backlog</h2>
       <p class="text-sm text-gray-500">
-        Ukoly v prvnim sloupci ({{ firstStatusTitle }}). Tahnuti zmeni poradi.
+        Úkoly v prvním sloupci ({{ firstStatusTitle }}). Tažením změníte pořadí.
       </p>
     </div>
 
     <div v-if="!firstStatusId" class="text-center py-12 text-gray-500">
-      <p>Projekt nema zadne stavy. Pridejte stavy v nastaveni projektu.</p>
+      <p>Projekt nemá žádné stavy. Přidejte stavy v nastavení projektu.</p>
     </div>
 
     <div
@@ -44,7 +44,7 @@
           variant="ghost"
           @click="$emit('select', task)"
         >
-          Otevrit
+          Otevřít
         </UButton>
       </div>
 
@@ -53,8 +53,8 @@
         class="text-center py-12 text-gray-500 rounded-lg border border-dashed border-gray-300 dark:border-gray-600"
       >
         <div class="i-heroicons-clipboard-document-list w-12 h-12 mx-auto mb-2 text-gray-400" />
-        <p>Zadne ukoly v backlogu</p>
-        <p class="text-sm mt-1">Presunte ukoly do prvniho sloupce na boardu.</p>
+        <p>Žádné úkoly v backlogu</p>
+        <p class="text-sm mt-1">Přesuňte úkoly do prvního sloupce na boardu.</p>
       </div>
     </div>
   </div>
@@ -148,9 +148,9 @@ async function onDrop(e: DragEvent) {
       await firestoreTasks.updateTask(ordered[i], { backlogOrder: i });
       scrumBoard.updateTask(ordered[i], { backlogOrder: i });
     }
-    toast.add({ title: 'Poradi backlogu ulozeno', color: 'green' });
+    toast.add({ title: 'Pořadí backlogu uloženo', color: 'green' });
   } catch {
-    toast.add({ title: 'Nepodarilo se ulozit poradi', color: 'red' });
+    toast.add({ title: 'Nepodařilo se uložit pořadí', color: 'red' });
   }
   draggedTaskId = null;
   draggedIndex = -1;
