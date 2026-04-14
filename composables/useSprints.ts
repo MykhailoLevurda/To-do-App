@@ -3,6 +3,7 @@ import {
   doc,
   addDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   onSnapshot,
@@ -132,6 +133,17 @@ export function useSprints(projectId: Ref<string> | string) {
     return updateSprint(sprintId, { status: 'closed' });
   }
 
+  async function deleteSprint(sprintId: string): Promise<boolean> {
+    if (!firestore || !auth.user.value) return false;
+    try {
+      await deleteDoc(doc(firestore, 'sprints', sprintId));
+      return true;
+    } catch (e) {
+      console.error('[useSprints] deleteSprint failed:', e);
+      return false;
+    }
+  }
+
   return {
     sprints: readonly(sprints),
     activeSprint,
@@ -140,6 +152,7 @@ export function useSprints(projectId: Ref<string> | string) {
     addSprint,
     updateSprint,
     startSprint,
-    closeSprint
+    closeSprint,
+    deleteSprint
   };
 }

@@ -93,6 +93,22 @@
           >
             Uzavřít
           </UButton>
+          <UButton
+            size="xs"
+            variant="ghost"
+            icon="i-heroicons-pencil"
+            title="Upravit sprint"
+            @click="openEditModal(sprint)"
+          />
+          <UButton
+            v-if="sprint.status !== 'active'"
+            size="xs"
+            variant="ghost"
+            color="red"
+            icon="i-heroicons-trash"
+            title="Smazat sprint"
+            @click="deleteSprintConfirm(sprint.id)"
+          />
         </div>
       </div>
       <p v-if="sprints.length === 0" class="text-sm text-gray-500 py-4">Zatím žádné sprinty. Vytvořte první sprint.</p>
@@ -137,6 +153,61 @@
       </UCard>
     </UModal>
 
+    <!-- Modal: Upravit sprint -->
+    <UModal v-model="showEditModal">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Upravit sprint</h3>
+        </template>
+        <form class="space-y-4" @submit.prevent="saveEditSprint">
+          <UFormGroup label="Název" required>
+            <UInput v-model="editSprint.name" placeholder="např. Sprint 1" required />
+          </UFormGroup>
+          <div class="grid grid-cols-2 gap-4">
+            <UFormGroup label="Začátek" required>
+              <input
+                v-model="editSprint.startDate"
+                type="date"
+                required
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900"
+              />
+            </UFormGroup>
+            <UFormGroup label="Konec" required>
+              <input
+                v-model="editSprint.endDate"
+                type="date"
+                required
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900"
+              />
+            </UFormGroup>
+          </div>
+          <UFormGroup label="Cíl sprintu (volitelně)">
+            <UTextarea v-model="editSprint.goal" placeholder="Čeho chcete ve sprintu dosáhnout?" rows="2" />
+          </UFormGroup>
+          <div class="flex justify-end gap-2 pt-2">
+            <UButton variant="ghost" type="button" @click="showEditModal = false">Zrušit</UButton>
+            <UButton type="submit" :loading="isSaving">Uložit</UButton>
+          </div>
+        </form>
+      </UCard>
+    </UModal>
+
+    <!-- Potvrzení smazání sprintu -->
+    <UModal v-model="showDeleteConfirm">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Smazat sprint</h3>
+        </template>
+        <p class="text-gray-600 dark:text-gray-400">Opravdu chcete smazat tento sprint? Úkoly zůstanou v projektu.</p>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="showDeleteConfirm = false">Zrušit</UButton>
+            <UButton color="red" :loading="isDeleting" @click="doDeleteSprint">Smazat</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
     <!-- Potvrzení uzavření sprintu -->
     <UModal v-model="showCloseConfirm">
       <UCard>
@@ -172,7 +243,7 @@ const firestoreTasks = useFirestoreTasks();
 const toast = useToast();
 
 const sprintsApi = useSprints(computed(() => props.projectId));
-const { sprints, activeSprint, startListening, stopListening, addSprint, startSprint: apiStartSprint, closeSprint: apiCloseSprint } = sprintsApi;
+const { sprints, activeSprint, startListening, stopListening, addSprint, updateSprint, startSprint: apiStartSprint, closeSprint: apiCloseSprint, deleteSprint: apiDeleteSprint } = sprintsApi;
 
 onMounted(() => {
   if (props.projectId) startListening();
@@ -272,12 +343,113 @@ function closeSprintConfirm(sprintId: string) {
 async function doCloseSprint() {
   if (!sprintToClose.value) return;
   isClosing.value = true;
-  const ok = await apiCloseSprint(sprintToClose.value);
+  const sprintId = sprintToClose.value;
+  const ok = await apiCloseSprint(sprintId);
+  if (!ok) {
+    isClosing.value = false;
+    toast.add({ title: 'Nepodařilo se uzavřít sprint', color: 'red' });
+    return;
+  }
+
+  // Po uzavření sprintu odebrat sprintId ze všech úkolů ve sprintu
+  const tasksInSprint = projectTasks.value.filter((t) => t.sprintId === sprintId);
+  const results = await Promise.allSettled(
+    tasksInSprint.map((t) => firestoreTasks.updateTask(t.id, { sprintId: undefined }))
+  );
+  const failed = results.filter((r) => r.status === 'fulfilled' && r.value === false).length
+    + results.filter((r) => r.status === 'rejected').length;
+
+  for (const t of tasksInSprint) {
+    scrumBoard.updateTask(t.id, { sprintId: undefined });
+  }
+
   isClosing.value = false;
   showCloseConfirm.value = false;
   sprintToClose.value = null;
-  if (ok) toast.add({ title: 'Sprint byl uzavřen', color: 'green' });
-  else toast.add({ title: 'Nepodařilo se uzavřít sprint', color: 'red' });
+
+  if (failed > 0) {
+    toast.add({ title: `Sprint uzavřen, ale nepodařilo se odebrat ${failed} úkolů ze sprintu`, color: 'amber' });
+  } else {
+    toast.add({ title: 'Sprint byl uzavřen', color: 'green' });
+  }
+}
+
+// --- Editace sprintu ---
+const showEditModal = ref(false);
+const isSaving = ref(false);
+const editSprintId = ref<string | null>(null);
+const editSprint = ref({ name: '', startDate: '', endDate: '', goal: '' });
+
+function toInputDate(d: Date): string {
+  return new Date(d).toISOString().slice(0, 10);
+}
+
+function openEditModal(sprint: Sprint) {
+  editSprintId.value = sprint.id;
+  editSprint.value = {
+    name: sprint.name,
+    startDate: toInputDate(sprint.startDate),
+    endDate: toInputDate(sprint.endDate),
+    goal: sprint.goal ?? ''
+  };
+  showEditModal.value = true;
+}
+
+async function saveEditSprint() {
+  if (!editSprintId.value || !editSprint.value.name.trim() || !editSprint.value.startDate || !editSprint.value.endDate) {
+    toast.add({ title: 'Vyplňte název a období sprintu', color: 'amber' });
+    return;
+  }
+  isSaving.value = true;
+  const ok = await updateSprint(editSprintId.value, {
+    name: editSprint.value.name.trim(),
+    startDate: new Date(editSprint.value.startDate),
+    endDate: new Date(editSprint.value.endDate),
+    goal: editSprint.value.goal?.trim() || undefined
+  });
+  isSaving.value = false;
+  if (ok) {
+    showEditModal.value = false;
+    toast.add({ title: 'Sprint byl upraven', color: 'green' });
+  } else {
+    toast.add({ title: 'Nepodařilo se upravit sprint', color: 'red' });
+  }
+}
+
+// --- Smazání sprintu ---
+const showDeleteConfirm = ref(false);
+const sprintToDelete = ref<string | null>(null);
+const isDeleting = ref(false);
+
+function deleteSprintConfirm(sprintId: string) {
+  sprintToDelete.value = sprintId;
+  showDeleteConfirm.value = true;
+}
+
+async function doDeleteSprint() {
+  if (!sprintToDelete.value) return;
+  isDeleting.value = true;
+  const sprintId = sprintToDelete.value;
+
+  // Odebrat sprintId ze všech úkolů patřících tomuto sprintu
+  const tasksInSprint = projectTasks.value.filter((t) => t.sprintId === sprintId);
+  await Promise.allSettled(
+    tasksInSprint.map((t) => firestoreTasks.updateTask(t.id, { sprintId: undefined }))
+  );
+  for (const t of tasksInSprint) {
+    scrumBoard.updateTask(t.id, { sprintId: undefined });
+  }
+
+  const ok = await apiDeleteSprint(sprintId);
+  isDeleting.value = false;
+  showDeleteConfirm.value = false;
+  sprintToDelete.value = null;
+
+  if (ok) {
+    toast.add({ title: 'Sprint byl smazán', color: 'green' });
+  } else {
+    toast.add({ title: 'Nepodařilo se smazat sprint', color: 'red' });
+  }
 }
 
 async function addToSprint(taskId: string) {
