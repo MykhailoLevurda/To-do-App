@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig();
@@ -9,16 +10,10 @@ export default defineNuxtPlugin(() => {
     apiKey: config.public.firebaseApiKey,
     authDomain: config.public.firebaseAuthDomain,
     projectId: config.public.firebaseProjectId,
+    storageBucket: config.public.firebaseStorageBucket,
     messagingSenderId: config.public.firebaseMessagingSenderId,
     appId: config.public.firebaseAppId
   };
-
-  // Debug: Check if credentials are loaded
-  console.log('[Firebase Plugin] Config:', {
-    hasApiKey: !!firebaseConfig.apiKey,
-    hasProjectId: !!firebaseConfig.projectId,
-    projectId: firebaseConfig.projectId
-  });
 
   // Validate config
   if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
@@ -27,23 +22,23 @@ export default defineNuxtPlugin(() => {
       provide: {
         firebaseApp: null,
         firebaseAuth: null,
-        firestore: null
+        firestore: null,
+        firebaseStorage: null
       }
     };
   }
 
-  // Initialize Firebase (Storage nepoužíváme – přílohy jdou přes server API na disk)
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const firestore = getFirestore(app);
-
-  console.log('[Firebase Plugin] Firebase initialized successfully!');
+  const storage = firebaseConfig.storageBucket ? getStorage(app) : null;
 
   return {
     provide: {
       firebaseApp: app,
       firebaseAuth: auth,
-      firestore: firestore
+      firestore: firestore,
+      firebaseStorage: storage
     }
   };
 });
