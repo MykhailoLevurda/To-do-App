@@ -189,6 +189,38 @@
       </UCard>
     </UModal>
 
+    <!-- Potvrzení archivace -->
+    <UModal v-model="showArchiveConfirm">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Archivovat projekt</h3>
+        </template>
+        <p class="text-gray-600 dark:text-gray-400">Opravdu chcete archivovat projekt <strong>{{ projectToArchive?.name }}</strong>? Projekt bude skryt, ale data zůstanou zachována.</p>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="showArchiveConfirm = false">Zrušit</UButton>
+            <UButton color="primary" :loading="isArchiving" @click="doArchiveProject">Archivovat</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+    <!-- Potvrzení smazání projektu -->
+    <UModal v-model="showDeleteConfirm">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Smazat projekt</h3>
+        </template>
+        <p class="text-gray-600 dark:text-gray-400">Opravdu chcete trvale smazat projekt <strong>{{ projectToDelete?.name }}</strong>? Tato akce je nevratná.</p>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="showDeleteConfirm = false">Zrušit</UButton>
+            <UButton color="red" :loading="isDeleting" @click="doDeleteProject">Smazat</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
     <AuthModal v-model="showAuthModal" />
   </div>
 </template>
@@ -208,6 +240,16 @@ const showAuthModal = ref(false);
 const editingProject = ref<Project | null>(null);
 const pendingProjectCreation = ref(false);
 const isSaving = ref(false);
+
+// Archivace
+const showArchiveConfirm = ref(false);
+const projectToArchive = ref<Project | null>(null);
+const isArchiving = ref(false);
+
+// Smazání
+const showDeleteConfirm = ref(false);
+const projectToDelete = ref<Project | null>(null);
+const isDeleting = ref(false);
 
 const projectForm = ref<{
   name: string;
@@ -322,33 +364,54 @@ function openProject(project: Project) {
   router.push(`/projects/${project.id}`);
 }
 
-async function archiveProject(projectId: string) {
-  if (!confirm('Opravdu chcete archivovat tento projekt?')) return;
-  const ok = await firestoreProjects.archiveProject(projectId);
+function archiveProject(projectId: string) {
+  const project = projectsStore.getProjectById(projectId);
+  if (!project) return;
+  projectToArchive.value = project;
+  showArchiveConfirm.value = true;
+}
+
+async function doArchiveProject() {
+  if (!projectToArchive.value) return;
+  isArchiving.value = true;
+  const toast = useToast();
+  const ok = await firestoreProjects.archiveProject(projectToArchive.value.id);
+  isArchiving.value = false;
+  showArchiveConfirm.value = false;
+  projectToArchive.value = null;
   if (ok) {
-    const toast = useToast();
     toast.add({ title: 'Projekt byl archivován', color: 'green' });
   } else {
-    alert('Nepodařilo se archivovat projekt.');
+    toast.add({ title: 'Nepodařilo se archivovat projekt', color: 'red' });
   }
 }
 
 async function unarchiveProject(projectId: string) {
+  const toast = useToast();
   const ok = await firestoreProjects.unarchiveProject(projectId);
   if (ok) {
-    const toast = useToast();
     toast.add({ title: 'Projekt byl obnoven', color: 'green' });
   } else {
-    alert('Nepodařilo se obnovit projekt.');
+    toast.add({ title: 'Nepodařilo se obnovit projekt', color: 'red' });
   }
 }
 
-async function deleteProject(projectId: string) {
+function deleteProject(projectId: string) {
   const project = projectsStore.getProjectById(projectId);
   if (!project) return;
-  if (!confirm(`Opravdu chcete smazat projekt "${project.name}"? Tato akce je nevratná.`)) return;
+  projectToDelete.value = project;
+  showDeleteConfirm.value = true;
+}
 
+async function doDeleteProject() {
+  if (!projectToDelete.value) return;
+  isDeleting.value = true;
+  const toast = useToast();
+  const projectId = projectToDelete.value.id;
   const ok = await firestoreProjects.deleteProject(projectId);
+  isDeleting.value = false;
+  showDeleteConfirm.value = false;
+  projectToDelete.value = null;
   if (ok) {
     if (projectsStore.currentProject?.id === projectId) {
       projectsStore.setCurrentProject(null);
@@ -356,10 +419,9 @@ async function deleteProject(projectId: string) {
         router.push('/');
       }
     }
-    const toast = useToast();
     toast.add({ title: 'Projekt byl smazán', color: 'green' });
   } else {
-    alert('Nepodařilo se smazat projekt.');
+    toast.add({ title: 'Nepodařilo se smazat projekt', color: 'red' });
   }
 }
 

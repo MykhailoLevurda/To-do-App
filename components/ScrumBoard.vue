@@ -53,6 +53,16 @@
       <div class="flex flex-wrap items-center gap-2 mt-4 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
         <span class="text-sm font-medium text-gray-500 shrink-0">Filtrovat:</span>
 
+        <div class="relative">
+          <span class="absolute left-2 top-1/2 -translate-y-1/2 i-heroicons-magnifying-glass w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            v-model="filters.search"
+            type="search"
+            placeholder="Hledat v úkolech..."
+            class="pl-7 pr-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 w-44 focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+
         <select
           v-model="filters.assigneeId"
           class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900"
@@ -429,14 +439,21 @@ const projectTasks = computed(() => {
 });
 
 // --- Filtry ---
-const filters = ref({ assigneeId: '', priority: '', labelId: '', sprintId: '' });
+const filters = ref({ assigneeId: '', priority: '', labelId: '', sprintId: '', search: '' });
 
 const hasActiveFilters = computed(() =>
-  !!(filters.value.assigneeId || filters.value.priority || filters.value.labelId || filters.value.sprintId)
+  !!(filters.value.assigneeId || filters.value.priority || filters.value.labelId || filters.value.sprintId || filters.value.search)
 );
 
 const filteredProjectTasks = computed(() => {
   let tasks = projectTasks.value;
+  if (filters.value.search) {
+    const q = filters.value.search.toLowerCase();
+    tasks = tasks.filter(t =>
+      t.title.toLowerCase().includes(q) ||
+      (t.description?.toLowerCase().includes(q) ?? false)
+    );
+  }
   if (filters.value.assigneeId) {
     tasks = tasks.filter(t => t.assigneeId === filters.value.assigneeId);
   }
@@ -455,7 +472,7 @@ const filteredProjectTasks = computed(() => {
 });
 
 function clearFilters() {
-  filters.value = { assigneeId: '', priority: '', labelId: '', sprintId: '' };
+  filters.value = { assigneeId: '', priority: '', labelId: '', sprintId: '', search: '' };
 }
 
 const tasksByStatus = (statusId: string) => {

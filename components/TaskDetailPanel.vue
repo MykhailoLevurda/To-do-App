@@ -15,7 +15,14 @@
       <template v-if="task">
       <!-- Header: název úkolu + zavřít -->
       <div class="flex items-start justify-between gap-3 p-4 border-b border-gray-200 dark:border-gray-800 shrink-0">
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 leading-tight pr-8">
+        <template v-if="editMode">
+          <input
+            v-model="editForm.title"
+            class="flex-1 text-lg font-semibold bg-transparent border-b-2 border-primary focus:outline-none text-gray-900 dark:text-gray-100"
+            placeholder="Název úkolu"
+          />
+        </template>
+        <h2 v-else class="text-lg font-semibold text-gray-900 dark:text-gray-100 leading-tight flex-1">
           {{ task.title }}
         </h2>
         <UButton
@@ -36,13 +43,47 @@
           <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
             Popis
           </h3>
-          <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
+          <textarea
+            v-if="editMode"
+            v-model="editForm.description"
+            rows="4"
+            class="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="Popis úkolu..."
+          />
+          <p v-else class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
             {{ task.description || 'Žádný popis.' }}
           </p>
         </section>
 
-        <!-- Činitel (řešitel) a meta -->
-        <section class="flex flex-wrap items-center gap-3">
+        <!-- Editační pole pro meta -->
+        <section v-if="editMode" class="grid grid-cols-2 gap-3 border border-primary/30 rounded-lg p-3 bg-primary/5">
+          <div>
+            <label class="text-xs font-medium text-gray-500 mb-1 block">Priorita</label>
+            <select v-model="editForm.priority" class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900">
+              <option value="low">Nízká</option>
+              <option value="medium">Střední</option>
+              <option value="high">Vysoká</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-500 mb-1 block">Story points</label>
+            <input v-model.number="editForm.storyPoints" type="number" min="0" max="100" class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900" placeholder="0" />
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-500 mb-1 block">Termín</label>
+            <input v-model="editForm.dueDate" type="date" class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900" />
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-500 mb-1 block">Řešitel</label>
+            <select v-model="editForm.assigneeId" class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900" @change="onEditAssigneeChange">
+              <option value="">Nepřiřazeno</option>
+              <option v-for="m in projectMembers" :key="m.userId" :value="m.userId">{{ m.displayName || m.email }}</option>
+            </select>
+          </div>
+        </section>
+
+        <!-- Zobrazení meta (jen v read-only režimu) -->
+        <section v-else class="flex flex-wrap items-center gap-3">
           <div v-if="task.assignee" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800">
             <div class="i-heroicons-user w-4 h-4 text-gray-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Řešitel: {{ task.assignee }}</span>
@@ -214,7 +255,7 @@
             >
               <div class="flex justify-between items-center gap-2 mb-1 flex-wrap">
                 <span class="font-medium text-gray-700 dark:text-gray-300">{{ c.author }}</span>
-                <div class="flex items-center gap-1">
+                <div class="relative flex items-center gap-1">
                   <span class="text-xs text-gray-500">{{ formatCommentDate(c.createdAt) }}</span>
                   <template v-if="canEditComment(c)">
                     <UButton
@@ -233,6 +274,15 @@
                       aria-label="Smazat"
                       @click="confirmDeleteComment(c)"
                     />
+                    <!-- Potvrzení smazání komentáře (inline) -->
+                    <div
+                      v-if="showDeleteCommentConfirm && deleteCommentId === c.id"
+                      class="absolute right-0 top-full mt-1 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 flex items-center gap-2 text-sm whitespace-nowrap"
+                    >
+                      <span class="text-gray-700 dark:text-gray-300">Smazat komentář?</span>
+                      <UButton size="xs" color="red" @click="doDeleteComment">Ano</UButton>
+                      <UButton size="xs" variant="ghost" @click="showDeleteCommentConfirm = false; deleteCommentId = null">Ne</UButton>
+                    </div>
                   </template>
                 </div>
               </div>
@@ -299,42 +349,54 @@
 
       <!-- Akce dole -->
       <div class="p-4 border-t border-gray-200 dark:border-gray-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
-        <div class="flex items-center gap-1 text-sm text-gray-500">
-          <template v-if="isCompleted">
-            <span v-if="task.approved" class="flex items-center gap-1 text-green-600">
-              <span class="i-heroicons-check-circle w-4 h-4" /> Schváleno
-            </span>
-            <span v-else class="flex items-center gap-1 text-amber-600">
-              <span class="i-heroicons-clock w-4 h-4" /> Čeká na schválení
-            </span>
-          </template>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <UButton
-            v-if="isCompleted && !task.approved"
-            icon="i-heroicons-check-circle"
-            color="green"
-            size="sm"
-            @click="approveTask"
-          >
-            Schválit
-          </UButton>
-          <UButton
-            :icon="isCompleted ? 'i-heroicons-arrow-path' : 'i-heroicons-check-circle'"
-            :color="isCompleted ? 'neutral' : 'green'"
-            size="sm"
-            variant="soft"
-            @click="toggleTaskStatus"
-          >
-            {{ isCompleted ? 'Otevřít' : 'Hotovo' }}
-          </UButton>
-          <UButton icon="i-heroicons-pencil" size="sm" variant="soft" @click="editTask">
-            Upravit
-          </UButton>
-          <UButton icon="i-heroicons-trash" size="sm" color="red" variant="soft" @click="deleteTask">
-            Smazat
-          </UButton>
-        </div>
+        <!-- Editační režim: Uložit / Zrušit -->
+        <template v-if="editMode">
+          <span class="text-xs text-gray-400">Upravuješ úkol</span>
+          <div class="flex gap-2">
+            <UButton variant="ghost" size="sm" @click="cancelEdit">Zrušit</UButton>
+            <UButton icon="i-heroicons-check" size="sm" :loading="isSavingEdit" @click="saveEdit">Uložit</UButton>
+          </div>
+        </template>
+
+        <!-- Normální režim -->
+        <template v-else>
+          <div class="flex items-center gap-1 text-sm text-gray-500">
+            <template v-if="isCompleted">
+              <span v-if="task.approved" class="flex items-center gap-1 text-green-600">
+                <span class="i-heroicons-check-circle w-4 h-4" /> Schváleno
+              </span>
+              <span v-else class="flex items-center gap-1 text-amber-600">
+                <span class="i-heroicons-clock w-4 h-4" /> Čeká na schválení
+              </span>
+            </template>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              v-if="isCompleted && !task.approved"
+              icon="i-heroicons-check-circle"
+              color="green"
+              size="sm"
+              @click="approveTask"
+            >
+              Schválit
+            </UButton>
+            <UButton
+              :icon="isCompleted ? 'i-heroicons-arrow-path' : 'i-heroicons-check-circle'"
+              :color="isCompleted ? 'neutral' : 'green'"
+              size="sm"
+              variant="soft"
+              @click="toggleTaskStatus"
+            >
+              {{ isCompleted ? 'Otevřít' : 'Hotovo' }}
+            </UButton>
+            <UButton icon="i-heroicons-pencil" size="sm" variant="soft" @click="startEdit">
+              Upravit
+            </UButton>
+            <UButton icon="i-heroicons-trash" size="sm" color="red" variant="soft" @click="deleteTask">
+              Smazat
+            </UButton>
+          </div>
+        </template>
       </div>
       </template>
     </aside>
@@ -363,7 +425,70 @@ const emit = defineEmits<{
 const auth = useAuth();
 const firestoreTasks = useFirestoreTasks();
 const scrumBoard = useScrumBoardStore();
+const projectsStore = useProjectsStore();
 const { byId: taskLabelsById } = useTaskLabels();
+
+// --- Inline editace ---
+const editMode = ref(false);
+const isSavingEdit = ref(false);
+const editForm = ref({ title: '', description: '', priority: 'medium' as 'low' | 'medium' | 'high', dueDate: '', assigneeId: '', assignee: '', storyPoints: 0 });
+
+const projectMembers = computed(() => {
+  if (!task.value) return [];
+  const project = projectsStore.getProjectById(task.value.projectId);
+  return project?.teamMembers ?? [];
+});
+
+function startEdit() {
+  if (!task.value) return;
+  editForm.value = {
+    title: task.value.title,
+    description: task.value.description ?? '',
+    priority: task.value.priority ?? 'medium',
+    dueDate: task.value.dueDate ? new Date(task.value.dueDate).toISOString().slice(0, 10) : '',
+    assigneeId: task.value.assigneeId ?? '',
+    assignee: task.value.assignee ?? '',
+    storyPoints: task.value.storyPoints ?? 0
+  };
+  editMode.value = true;
+}
+
+function cancelEdit() {
+  editMode.value = false;
+}
+
+function onEditAssigneeChange() {
+  const member = projectMembers.value.find((m) => m.userId === editForm.value.assigneeId);
+  editForm.value.assignee = member ? (member.displayName || member.email) : '';
+}
+
+async function saveEdit() {
+  if (!task.value || !editForm.value.title.trim()) return;
+  isSavingEdit.value = true;
+  const updates: Record<string, unknown> = {
+    title: editForm.value.title.trim(),
+    description: editForm.value.description.trim() || undefined,
+    priority: editForm.value.priority,
+    storyPoints: editForm.value.storyPoints || undefined,
+    assigneeId: editForm.value.assigneeId || undefined,
+    assignee: editForm.value.assignee || undefined,
+    dueDate: editForm.value.dueDate ? new Date(editForm.value.dueDate) : undefined
+  };
+  const ok = await firestoreTasks.updateTask(task.value.id, updates as any);
+  isSavingEdit.value = false;
+  if (ok) {
+    scrumBoard.updateTask(task.value.id, updates as any);
+    editMode.value = false;
+    useToast().add({ title: 'Úkol byl uložen', color: 'green' });
+  } else {
+    useToast().add({ title: 'Nepodařilo se uložit úkol', color: 'red' });
+  }
+}
+
+// Při zavření panelu zrušit editaci
+watch(() => props.isOpen, (open) => {
+  if (!open) editMode.value = false;
+});
 
 const newComment = ref('');
 const isSubmittingComment = ref(false);
@@ -503,12 +628,22 @@ async function saveEditComment() {
   }
 }
 
-async function confirmDeleteComment(c: { id: string; text: string }) {
-  if (!task.value) return;
-  if (!confirm('Opravdu smazat tento komentář?')) return;
-  const ok = await firestoreTasks.deleteComment(task.value.id, c.id);
+const deleteCommentId = ref<string | null>(null);
+const showDeleteCommentConfirm = ref(false);
+
+function confirmDeleteComment(c: { id: string; text: string }) {
+  deleteCommentId.value = c.id;
+  showDeleteCommentConfirm.value = true;
+}
+
+async function doDeleteComment() {
+  if (!task.value || !deleteCommentId.value) return;
+  const id = deleteCommentId.value;
+  showDeleteCommentConfirm.value = false;
+  deleteCommentId.value = null;
+  const ok = await firestoreTasks.deleteComment(task.value.id, id);
   if (ok) {
-    if (editingCommentId.value === c.id) cancelEditComment();
+    if (editingCommentId.value === id) cancelEditComment();
   } else {
     useToast().add({ title: 'Nepodařilo se smazat komentář', color: 'red' });
   }
@@ -644,12 +779,6 @@ async function toggleTaskStatus() {
   } else {
     useToast().add({ title: 'Nepodařilo se změnit stav úkolu', color: 'red' });
   }
-}
-
-function editTask() {
-  if (!task.value) return;
-  close();
-  emit('edit', task.value);
 }
 
 function deleteTask() {
