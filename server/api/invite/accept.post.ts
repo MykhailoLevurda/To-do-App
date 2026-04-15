@@ -1,6 +1,7 @@
 import { defineEventHandler, readBody, getHeader, setResponseStatus } from 'h3';
 import { getAdminFirestore, getAdminAuth } from '../../utils/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { verifyInviteToken } from '../invite.post';
 
 export default defineEventHandler(async (event) => {
   try {
@@ -27,10 +28,23 @@ export default defineEventHandler(async (event) => {
     }
 
     const body = await readBody(event);
-    const { projectId } = body;
-    if (!projectId || typeof projectId !== 'string') {
+    const { projectId: bodyProjectId, inviteToken } = body;
+
+    // Pokud je přiložen invite token, ověř HMAC podpis a vytáhni projectId z tokenu
+    let projectId: string;
+    if (inviteToken && typeof inviteToken === 'string') {
+      const tokenData = verifyInviteToken(inviteToken);
+      if (!tokenData) {
+        setResponseStatus(event, 400);
+        return { success: false, error: 'Neplatny nebo expirovany pozvankovny token' };
+      }
+      projectId = tokenData.projectId as string;
+    } else if (bodyProjectId && typeof bodyProjectId === 'string') {
+      // Zpětná kompatibilita – přijmout i bez tokenu (pro starší pozvánky)
+      projectId = bodyProjectId;
+    } else {
       setResponseStatus(event, 400);
-      return { success: false, error: 'Chybi projectId' };
+      return { success: false, error: 'Chybi projectId nebo inviteToken' };
     }
 
     const userEmail = (decodedToken.email || '').toLowerCase().trim();

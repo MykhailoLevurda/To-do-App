@@ -88,22 +88,23 @@ const autoAccepting = ref(false);
 const showAuthModal = ref(false);
 const toast = useToast();
 
-// Dekódovat pozvánkový token
+// Dekódovat pozvánkový token (nový formát: payloadB64.hmacSig nebo starý plain base64)
 function decodeInviteToken(token: string): any | null {
   try {
-    // Rekonstruovat base64 (vrátit nahradené znaky)
-    const padded = token + '='.repeat((4 - (token.length % 4)) % 4);
+    // Nový formát: payload.sig – odstraň podpis, dekóduj pouze payload
+    const dotIdx = token.lastIndexOf('.');
+    const payloadPart = dotIdx !== -1 ? token.slice(0, dotIdx) : token;
+
+    const padded = payloadPart + '='.repeat((4 - (payloadPart.length % 4)) % 4);
     const base64 = padded.replace(/-/g, '+').replace(/_/g, '/');
-    
-    // Použít atob pro dekódování base64 v prohlížeči
+
     const json = atob(base64);
     const data = JSON.parse(json);
-    
-    // Kontrola expirace
+
     if (data.expiresAt && Date.now() > data.expiresAt) {
       return null; // Pozvánka vypršela
     }
-    
+
     return data;
   } catch (e) {
     console.error('[Invite] Token decode error:', e);
@@ -165,7 +166,8 @@ async function acceptInvite() {
     const success = await teamMembers.acceptProjectInviteViaApi(
       inviteData.value.projectId,
       inviteData.value.email,
-      inviteData.value.role || 'member'
+      inviteData.value.role || 'member',
+      token.value  // předat raw token pro HMAC ověření na serveru
     );
 
     if (success) {

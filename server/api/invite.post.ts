@@ -1,5 +1,6 @@
 import { defineEventHandler, readBody, setResponseStatus } from 'h3';
 import { Resend } from 'resend';
+import { createHmac } from 'node:crypto';
 
 export default defineEventHandler(async (event) => {
   console.log('[Invite API] Request received', new Date().toISOString());
@@ -147,7 +148,8 @@ export default defineEventHandler(async (event) => {
 });
 
 /**
- * Generuje token pro pozvánku (Base64URL – URL-safe)
+ * Generuje HMAC-SHA256 podepsaný token pro pozvánku.
+ * Formát: base64url(payload).hmacHex
  */
 function generateInviteToken(email: string, invitedBy: string, projectId: string, role: string = 'member'): string {
   const data = {
@@ -160,19 +162,53 @@ function generateInviteToken(email: string, invitedBy: string, projectId: string
   };
 
   const json = JSON.stringify(data);
+  const payloadB64 = Buffer.from(json, 'utf-8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 
+  const secret = process.env.INVITE_SECRET || 'default-invite-secret-change-in-production';
+  const sig = createHmac('sha256', secret).update(payloadB64).digest('hex');
+
+  return `${payloadB64}.${sig}`;
+}
+
+/**
+ * Ověří HMAC podpis tokenu a vrátí payload, pokud je platný.
+ */
+export function verifyInviteToken(token: string): Record<string, unknown> | null {
   try {
-    if (typeof Buffer !== 'undefined') {
-      return Buffer.from(json, 'utf-8')
-        .toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
-    }
-  } catch (e) {
-    console.warn('[Invite API] Buffer not available, using fallback');
-  }
+    const dotIdx = token.lastIndexOf('.');
+    if (dotIdx === -1) return null;
 
-  return encodeURIComponent(json);
+    const payloadB64 = token.slice(0, dotIdx);
+    const sig = token.slice(dotIdx + 1);
+
+    const secret = process.env.INVITE_SECRET || 'default-invite-secret-change-in-production';
+    const expectedSig = createHmac('sha256', secret).update(payloadB64).digest('hex');
+
+    // Konstantní čas porovnání (brání timing attackům)
+    if (!timingSafeEqual(sig, expectedSig)) return null;
+
+    const padded = payloadB64 + '='.repeat((4 - (payloadB64.length % 4)) % 4);
+    const json = Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');
+    const data = JSON.parse(json);
+
+    if (data.expiresAt && Date.now() > data.expiresAt) return null;
+
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 

@@ -172,7 +172,8 @@ export const useTeamMembers = () => {
   const acceptProjectInviteViaApi = async (
     projectId: string,
     fallbackEmail?: string,
-    fallbackRole: 'admin' | 'member' = 'member'
+    fallbackRole: 'admin' | 'member' = 'member',
+    inviteToken?: string
   ): Promise<boolean> => {
     if (!auth.user.value) return false;
 
@@ -182,10 +183,13 @@ export const useTeamMembers = () => {
       if (!firebaseAuth?.currentUser) return false;
 
       const token = await firebaseAuth.currentUser.getIdToken();
+      const body: Record<string, string> = inviteToken
+        ? { inviteToken }
+        : { projectId };
 
       const res = await $fetch<{ success: boolean; error?: string }>('/api/invite/accept', {
         method: 'POST',
-        body: { projectId },
+        body,
         headers: { Authorization: `Bearer ${token}` }
       });
 
