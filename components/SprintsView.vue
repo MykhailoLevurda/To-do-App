@@ -214,7 +214,36 @@
         <template #header>
           <h3 class="text-lg font-semibold">Uzavřít sprint</h3>
         </template>
-        <p class="text-gray-600 dark:text-gray-400">Opravdu chcete uzavřít tento sprint? Úkoly zůstanou v projektu, jen se odeberou ze sprintu.</p>
+
+        <!-- Shrnutí úkolů -->
+        <div class="space-y-3">
+          <div class="flex gap-4 text-sm">
+            <span class="text-green-600 dark:text-green-400 font-medium">
+              Dokončeno: {{ closeTasksDone }}
+            </span>
+            <span :class="closeTasksOpen > 0 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-gray-500'">
+              Nedokončeno: {{ closeTasksOpen }}
+            </span>
+          </div>
+
+          <!-- Výběr akce pro nedokončené úkoly -->
+          <div v-if="closeTasksOpen > 0" class="space-y-2 pt-1">
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Co udělat s nedokončenými úkoly?</p>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" v-model="closeAction" value="backlog" class="text-primary" />
+              <span class="text-sm">Přesunout do backlogu</span>
+            </label>
+            <label
+              v-if="nextPlannedSprint"
+              class="flex items-center gap-2 cursor-pointer"
+            >
+              <input type="radio" v-model="closeAction" value="next-sprint" class="text-primary" />
+              <span class="text-sm">Přesunout do dalšího sprintu: <strong>{{ nextPlannedSprint.name }}</strong></span>
+            </label>
+          </div>
+          <p v-else class="text-sm text-gray-500">Všechny úkoly jsou dokončeny. Sprint lze uzavřít.</p>
+        </div>
+
         <template #footer>
           <div class="flex justify-end gap-2">
             <UButton variant="ghost" @click="showCloseConfirm = false">Zrušit</UButton>
@@ -334,9 +363,24 @@ async function startSprint(sprintId: string) {
 const showCloseConfirm = ref(false);
 const sprintToClose = ref<string | null>(null);
 const isClosing = ref(false);
+const closeAction = ref<'backlog' | 'next-sprint'>('backlog');
+
+// Nedokončené / dokončené úkoly uzavíraného sprintu (pro modal)
+const closeSprintTasks = computed(() => {
+  if (!sprintToClose.value) return [];
+  return projectTasks.value.filter((t) => t.sprintId === sprintToClose.value);
+});
+const closeTasksDone = computed(() => closeSprintTasks.value.filter(isTaskDone).length);
+const closeTasksOpen = computed(() => closeSprintTasks.value.length - closeTasksDone.value);
+
+// První plánovaný sprint (cíl pro přesunutí nedokončených úkolů)
+const nextPlannedSprint = computed(() =>
+  sprints.value.find((s) => s.status === 'planned' && s.id !== sprintToClose.value) ?? null
+);
 
 function closeSprintConfirm(sprintId: string) {
   sprintToClose.value = sprintId;
+  closeAction.value = 'backlog';
   showCloseConfirm.value = true;
 }
 
@@ -351,24 +395,38 @@ async function doCloseSprint() {
     return;
   }
 
-  // Po uzavření sprintu odebrat sprintId ze všech úkolů ve sprintu
-  const tasksInSprint = projectTasks.value.filter((t) => t.sprintId === sprintId);
-  const results = await Promise.allSettled(
-    tasksInSprint.map((t) => firestoreTasks.updateTask(t.id, { sprintId: undefined }))
-  );
-  const failed = results.filter((r) => r.status === 'fulfilled' && r.value === false).length
-    + results.filter((r) => r.status === 'rejected').length;
+  const tasksInSprint = closeSprintTasks.value;
+  const unfinished = tasksInSprint.filter((t) => !isTaskDone(t));
+  const done = tasksInSprint.filter(isTaskDone);
 
-  for (const t of tasksInSprint) {
-    scrumBoard.updateTask(t.id, { sprintId: undefined });
-  }
+  // Dokončené úkoly → vždy jen odebrat ze sprintu (zůstanou v posledním sloupci)
+  const doneUpdates = done.map((t) => firestoreTasks.updateTask(t.id, { sprintId: undefined }));
+
+  // Nedokončené úkoly → backlog nebo další sprint
+  const targetSprintId =
+    closeAction.value === 'next-sprint' && nextPlannedSprint.value
+      ? nextPlannedSprint.value.id
+      : undefined;
+
+  const openUpdates = unfinished.map((t) =>
+    firestoreTasks.updateTask(t.id, { sprintId: targetSprintId })
+  );
+
+  const results = await Promise.allSettled([...doneUpdates, ...openUpdates]);
+  const failed = results.filter((r) => r.status === 'rejected' || (r.status === 'fulfilled' && r.value === false)).length;
+
+  // Optimistická aktualizace store
+  for (const t of done) scrumBoard.updateTask(t.id, { sprintId: undefined });
+  for (const t of unfinished) scrumBoard.updateTask(t.id, { sprintId: targetSprintId });
 
   isClosing.value = false;
   showCloseConfirm.value = false;
   sprintToClose.value = null;
 
   if (failed > 0) {
-    toast.add({ title: `Sprint uzavřen, ale nepodařilo se odebrat ${failed} úkolů ze sprintu`, color: 'amber' });
+    toast.add({ title: `Sprint uzavřen, ale ${failed} úkolů se nepodařilo přesunout`, color: 'amber' });
+  } else if (unfinished.length > 0 && targetSprintId) {
+    toast.add({ title: `Sprint uzavřen – ${unfinished.length} nedokončených úkolů přesunuto do „${nextPlannedSprint.value?.name}"`, color: 'green' });
   } else {
     toast.add({ title: 'Sprint byl uzavřen', color: 'green' });
   }

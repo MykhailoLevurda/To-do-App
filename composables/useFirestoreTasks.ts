@@ -230,6 +230,9 @@ export const useFirestoreTasks = () => {
         });
       }
 
+      // Resync počty pro případ, že by se předchozí increment dostal mimo sync
+      syncProjectTaskCounts().catch(() => {});
+
       return true;
     } catch {
       return false;
@@ -240,41 +243,39 @@ export const useFirestoreTasks = () => {
     if (!auth.user.value) return false;
 
     try {
-      const userId = auth.user.value.uid;
-
-      const projectsRef = collection(firestore, 'projects');
-      const projectsQuery = query(projectsRef, where('createdBy', '==', userId));
-      const projectsSnapshot = await getDocs(projectsQuery);
+      // Sbíráme všechny projekty, kde je uživatel členem nebo vlastníkem
+      const allProjectIds = projectsStore.projects.map(p => p.id);
+      if (allProjectIds.length === 0) return true;
 
       const tasksRef = collection(firestore, 'tasks');
-      const tasksQuery = query(tasksRef, where('createdBy', '==', userId));
-      const tasksSnapshot = await getDocs(tasksQuery);
-
       const counts: Record<string, number> = {};
 
-      tasksSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.projectId) {
-          counts[data.projectId] = (counts[data.projectId] || 0) + 1;
-        }
-      });
+      // Firestore 'in' max 30 – rozdělíme na dávky
+      const BATCH = 30;
+      for (let i = 0; i < allProjectIds.length; i += BATCH) {
+        const batch = allProjectIds.slice(i, i + BATCH);
+        const tasksQuery = query(tasksRef, where('projectId', 'in', batch));
+        const snap = await getDocs(tasksQuery);
+        snap.forEach((d) => {
+          const pid = d.data().projectId as string;
+          counts[pid] = (counts[pid] || 0) + 1;
+        });
+      }
 
-      const updates = [];
-
-      projectsSnapshot.forEach((doc) => {
-        const projectId = doc.id;
-        const correct = counts[projectId] || 0;
-        const current = doc.data().taskCount || 0;
-
+      const updates: Promise<void>[] = [];
+      for (const project of projectsStore.projects) {
+        const correct = counts[project.id] || 0;
+        const current = (project as any).taskCount ?? 0;
         if (current !== correct) {
+          const projectRef = doc(firestore, 'projects', project.id);
           updates.push(
-            updateDoc(doc.ref, {
+            updateDoc(projectRef, {
               taskCount: correct,
               updatedAt: serverTimestamp()
             })
           );
         }
-      });
+      }
 
       await Promise.all(updates);
       return true;

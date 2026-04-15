@@ -141,12 +141,16 @@ async function acceptInvite() {
   const inviteEmail = inviteData.value.email?.toLowerCase();
   const userEmail = auth.user.value.email?.toLowerCase();
   if (inviteEmail && userEmail && inviteEmail !== userEmail) {
-    alert('Pro přijetí pozvánky se přihlaste účtem s emailem ' + inviteData.value.email);
+    toast.add({
+      title: 'Nesprávný účet',
+      description: `Pro přijetí pozvánky se přihlaste účtem ${inviteData.value.email}.`,
+      color: 'amber'
+    });
     return;
   }
 
   if (!inviteData.value.projectId) {
-    alert('Tato pozvánka je neplatná (chybí projekt). Použijte prosím nový odkaz z emailu.');
+    error.value = 'Tato pozvánka je neplatná (chybí projekt). Použijte prosím nový odkaz z emailu.';
     return;
   }
 
@@ -174,10 +178,18 @@ async function acceptInvite() {
       await firestoreProjects.startListening();
       router.push('/projects/' + inviteData.value.projectId);
     } else {
-      alert('Nepodařilo se připojit k projektu. Možná již byla pozvánka přijata nebo vypršela.');
+      toast.add({
+        title: 'Nepodařilo se připojit',
+        description: 'Pozvánka již byla přijata, vypršela nebo nemáte oprávnění.',
+        color: 'red'
+      });
     }
   } catch (e: any) {
-    alert('Chyba při připojování: ' + e.message);
+    toast.add({
+      title: 'Chyba při připojování',
+      description: e.message || 'Neznámá chyba',
+      color: 'red'
+    });
   } finally {
     isAccepting.value = false;
   }
