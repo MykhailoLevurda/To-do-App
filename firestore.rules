@@ -35,6 +35,10 @@ service cloud.firestore {
         allow update, delete: if request.auth != null
           && resource.data.userId == request.auth.uid;
       }
+      match /history/{historyId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+      }
     }
 
     // Users – každý jen svůj dokument

@@ -273,6 +273,28 @@
             />
           </div>
         </section>
+        <!-- Historie změn -->
+        <section class="border-t border-gray-200 dark:border-gray-800 pt-4">
+          <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+            <span class="i-heroicons-clock w-4 h-4" />
+            Historie
+          </h3>
+          <div v-if="history.length" class="space-y-2">
+            <div
+              v-for="entry in history"
+              :key="entry.id"
+              class="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400"
+            >
+              <span class="i-heroicons-user-circle w-4 h-4 shrink-0 mt-0.5 text-gray-400" />
+              <div>
+                <span class="font-medium text-gray-700 dark:text-gray-300">{{ entry.userName }}</span>
+                {{ historyLabel(entry) }}
+                <span class="ml-1 text-gray-400">· {{ formatHistoryDate(entry.timestamp) }}</span>
+              </div>
+            </div>
+          </div>
+          <p v-else class="text-xs text-gray-400">Žádná historie.</p>
+        </section>
       </div>
 
       <!-- Akce dole -->
@@ -503,16 +525,19 @@ watch(
     if (open && id) {
       if (lastListeningTaskId && lastListeningTaskId !== id) {
         firestoreTasks.stopListeningComments(lastListeningTaskId);
+        firestoreTasks.stopListeningHistory(lastListeningTaskId);
       }
       lastListeningTaskId = id;
       commentsLoading.value = true;
       firestoreTasks.listenComments(id);
+      firestoreTasks.listenHistory(id);
       nextTick(() => {
         commentsLoading.value = false;
       });
     } else {
       if (lastListeningTaskId) {
         firestoreTasks.stopListeningComments(lastListeningTaskId);
+        firestoreTasks.stopListeningHistory(lastListeningTaskId);
         lastListeningTaskId = null;
       }
     }
@@ -523,6 +548,7 @@ watch(
 onBeforeUnmount(() => {
   if (lastListeningTaskId) {
     firestoreTasks.stopListeningComments(lastListeningTaskId);
+    firestoreTasks.stopListeningHistory(lastListeningTaskId);
   }
 });
 
@@ -534,6 +560,32 @@ function formatCommentDate(val: Date | { toDate: () => Date } | undefined) {
 
 function formatDueDate(date: Date) {
   return new Date(date).toLocaleDateString('cs-CZ');
+}
+
+// --- Historie ---
+const history = computed(() => {
+  if (!task.value) return [];
+  return firestoreTasks.taskHistory.value[task.value.id] ?? [];
+});
+
+function historyLabel(entry: any): string {
+  switch (entry.action) {
+    case 'created': return 'vytvořil(a) úkol';
+    case 'approved': return 'schválil(a) úkol';
+    case 'updated':
+      if (entry.field && entry.newValue !== null && entry.newValue !== undefined && entry.newValue !== '') {
+        return `změnil(a) ${entry.field} → ${entry.newValue}`;
+      }
+      if (entry.field) return `změnil(a) ${entry.field}`;
+      return 'upravil(a) úkol';
+    default: return entry.action;
+  }
+}
+
+function formatHistoryDate(timestamp: any): string {
+  if (!timestamp) return '';
+  const d = typeof timestamp?.toDate === 'function' ? timestamp.toDate() : new Date(timestamp);
+  return d.toLocaleString('cs-CZ', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 const priorityBadgeColor = computed(() => {

@@ -141,6 +141,7 @@ export const useFirestoreTasks = () => {
         });
       }
 
+      await logChange(docRef.id, 'created');
       return { id: docRef.id };
     } catch (e: any) {
       const msg = e?.message || String(e);
@@ -186,6 +187,20 @@ export const useFirestoreTasks = () => {
         }
       }
       await updateDoc(taskRef, payload);
+
+      // Logovat změny sledovaných polí
+      const TRACKED = ['status', 'priority', 'assignee', 'title', 'dueDate', 'sprintId', 'storyPoints'];
+      for (const field of TRACKED) {
+        if (updates[field as keyof typeof updates] !== undefined) {
+          const newVal = updates[field as keyof typeof updates];
+          await logChange(taskId, 'updated', {
+            field: FIELD_LABELS[field] ?? field,
+            newValue: newVal instanceof Date
+              ? newVal.toLocaleDateString('cs-CZ')
+              : String(newVal ?? '')
+          });
+        }
+      }
 
       return true;
     } catch {
@@ -278,11 +293,69 @@ export const useFirestoreTasks = () => {
         updatedAt: serverTimestamp()
       });
 
+      await logChange(taskId, 'approved');
       return true;
     } catch {
       return false;
     }
   };
+
+  // --- Audit log (history) ---
+  const taskHistory = ref<Record<string, any[]>>({});
+  const historyUnsubscribes: Record<string, Unsubscribe | null> = {};
+
+  const FIELD_LABELS: Record<string, string> = {
+    status: 'stav',
+    priority: 'priorita',
+    assigneeId: 'řešitel',
+    assignee: 'řešitel',
+    title: 'název',
+    dueDate: 'termín',
+    sprintId: 'sprint',
+    storyPoints: 'story points'
+  };
+
+  async function logChange(
+    taskId: string,
+    action: string,
+    details?: { field?: string; oldValue?: string; newValue?: string }
+  ) {
+    if (!auth.user.value) return;
+    try {
+      await addDoc(collection(firestore, 'tasks', taskId, 'history'), {
+        userId: auth.user.value.uid,
+        userName: auth.user.value.displayName || auth.user.value.email || 'Neznámý',
+        action,
+        field: details?.field ?? null,
+        oldValue: details?.oldValue ?? null,
+        newValue: details?.newValue ?? null,
+        timestamp: serverTimestamp()
+      });
+    } catch {
+      // log failures are non-critical
+    }
+  }
+
+  function listenHistory(taskId: string) {
+    if (historyUnsubscribes[taskId]) historyUnsubscribes[taskId]!();
+    const q = query(
+      collection(firestore, 'tasks', taskId, 'history'),
+      orderBy('timestamp', 'desc')
+    );
+    historyUnsubscribes[taskId] = onSnapshot(q, (snapshot) => {
+      taskHistory.value = {
+        ...taskHistory.value,
+        [taskId]: snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+      };
+    });
+  }
+
+  function stopListeningHistory(taskId: string) {
+    if (historyUnsubscribes[taskId]) {
+      historyUnsubscribes[taskId]!();
+      historyUnsubscribes[taskId] = null;
+    }
+  }
 
   const taskComments = ref<Record<string, any[]>>({});
   const commentUnsubscribes: Record<string, Unsubscribe | null> = {};
@@ -384,6 +457,10 @@ export const useFirestoreTasks = () => {
     deleteComment,
     listenComments,
     stopListeningComments,
-    taskComments
+    taskComments,
+
+    listenHistory,
+    stopListeningHistory,
+    taskHistory
   };
 };
