@@ -61,6 +61,22 @@ const doneStoryPoints = computed(() => {
     .reduce((sum, t) => sum + (t.storyPoints ?? 0), 0);
 });
 
+/** Grafy */
+const DONUT_R = 48;
+const DONUT_C = 2 * Math.PI * DONUT_R; // 301.6
+
+const completionPct = computed(() =>
+  totalTasks.value > 0 ? Math.round((doneTasks.value / totalTasks.value) * 100) : 0
+);
+const donutDash = computed(() => (completionPct.value / 100) * DONUT_C);
+const donutGap = computed(() => DONUT_C - donutDash.value);
+
+const priorityCounts = computed(() => ({
+  high: tasks.value.filter((t) => t.priority === 'high').length,
+  medium: tasks.value.filter((t) => t.priority === 'medium').length,
+  low: tasks.value.filter((t) => t.priority === 'low').length
+}));
+
 /** Tabulka po projektech */
 const reportByProject = computed(() => {
   return projects.value.map((project) => {
@@ -134,6 +150,97 @@ const reportByProject = computed(() => {
               <div class="text-sm text-gray-500 dark:text-gray-400">Story points (dokončeno / celkem)</div>
             </div>
           </UCard>
+        </div>
+
+        <!-- Grafy -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+
+          <!-- Donut: celkový pokrok -->
+          <UCard>
+            <template #header>
+              <h2 class="text-base font-semibold">Celkový pokrok</h2>
+            </template>
+            <div class="flex items-center justify-center gap-6 py-2">
+              <svg width="110" height="110" viewBox="0 0 120 120">
+                <circle cx="60" cy="60" :r="DONUT_R" fill="none" stroke="#e5e7eb" stroke-width="14" />
+                <circle
+                  cx="60" cy="60" :r="DONUT_R"
+                  fill="none"
+                  stroke="#22c55e"
+                  stroke-width="14"
+                  stroke-linecap="round"
+                  :stroke-dasharray="`${donutDash} ${donutGap}`"
+                  transform="rotate(-90 60 60)"
+                />
+                <text x="60" y="56" text-anchor="middle" font-size="22" font-weight="bold" fill="currentColor">{{ completionPct }}%</text>
+                <text x="60" y="72" text-anchor="middle" font-size="11" fill="#9ca3af">hotovo</text>
+              </svg>
+              <div class="space-y-2 text-sm">
+                <div class="flex items-center gap-2">
+                  <span class="w-3 h-3 rounded-full bg-green-500 shrink-0" />
+                  Hotovo: {{ doneTasks }}
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="w-3 h-3 rounded-full bg-gray-200 dark:bg-gray-600 shrink-0" />
+                  Zbývá: {{ totalTasks - doneTasks }}
+                </div>
+              </div>
+            </div>
+          </UCard>
+
+          <!-- Distribuce priorit -->
+          <UCard>
+            <template #header>
+              <h2 class="text-base font-semibold">Distribuce priorit</h2>
+            </template>
+            <div class="space-y-3 py-2 px-1">
+              <div v-for="(item) in [
+                { label: 'Vysoká', key: 'high', color: '#ef4444', bg: 'bg-red-500' },
+                { label: 'Střední', key: 'medium', color: '#eab308', bg: 'bg-yellow-400' },
+                { label: 'Nízká', key: 'low', color: '#22c55e', bg: 'bg-green-500' }
+              ]" :key="item.key" class="space-y-1">
+                <div class="flex justify-between text-sm">
+                  <span>{{ item.label }}</span>
+                  <span class="font-medium">{{ priorityCounts[item.key as keyof typeof priorityCounts] }}</span>
+                </div>
+                <div class="h-3 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500"
+                    :class="item.bg"
+                    :style="{ width: totalTasks > 0 ? (priorityCounts[item.key as keyof typeof priorityCounts] / totalTasks * 100) + '%' : '0%' }"
+                  />
+                </div>
+              </div>
+              <p v-if="totalTasks === 0" class="text-sm text-gray-400 text-center py-2">Žádné úkoly</p>
+            </div>
+          </UCard>
+
+          <!-- Pokrok po projektech -->
+          <UCard>
+            <template #header>
+              <h2 class="text-base font-semibold">Pokrok po projektech</h2>
+            </template>
+            <div class="space-y-3 py-2 px-1">
+              <div
+                v-for="row in reportByProject.slice(0, 6)"
+                :key="row.project.id"
+                class="space-y-1"
+              >
+                <div class="flex justify-between text-sm">
+                  <span class="truncate max-w-[140px]" :title="row.project.name">{{ row.project.name }}</span>
+                  <span class="font-medium shrink-0 ml-2">{{ row.progress }} %</span>
+                </div>
+                <div class="h-3 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500"
+                    :style="{ width: row.progress + '%', backgroundColor: row.project.color || '#3b82f6' }"
+                  />
+                </div>
+              </div>
+              <p v-if="reportByProject.length === 0" class="text-sm text-gray-400 text-center py-2">Žádné projekty</p>
+            </div>
+          </UCard>
+
         </div>
 
         <!-- Tabulka po projektech -->
