@@ -66,6 +66,24 @@
       </UButton>
     </div>
 
+    <!-- Potvrzení odebrání člena -->
+    <UModal v-model="showRemoveMemberConfirm">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Odebrat člena</h3>
+        </template>
+        <p class="text-gray-600 dark:text-gray-400">
+          Opravdu chcete odebrat <strong>{{ memberEmailToRemove }}</strong> z týmu?
+        </p>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="showRemoveMemberConfirm = false">Zrušit</UButton>
+            <UButton color="red" @click="doRemoveMember">Odebrat</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
     <!-- Modal pro přidání člena -->
     <UModal v-model="showAddMemberModal">
       <UCard>
@@ -213,7 +231,7 @@ async function addMember() {
 
   const auth = useAuth();
   if (!auth.user.value) {
-    alert('Musíte být přihlášeni');
+    useToast().add({ title: 'Musíte být přihlášeni', color: 'red' });
     return;
   }
 
@@ -232,7 +250,7 @@ async function addMember() {
     });
 
     if (!inviteResponse?.success) {
-      alert('Chyba při odesílání pozvánky: ' + (inviteResponse?.error || 'Zkuste to znovu'));
+      useToast().add({ title: 'Chyba při odesílání pozvánky', description: inviteResponse?.error || 'Zkuste to znovu', color: 'red' });
       return;
     }
 
@@ -264,27 +282,33 @@ async function addMember() {
         toast.add({ title: 'Pozvánka odeslána na ' + addedEmail, color: 'green' });
       }
     } else {
-      alert('Nepodařilo se přidat člena do týmu');
+      useToast().add({ title: 'Nepodařilo se přidat člena do týmu', color: 'red' });
     }
   } catch (e: any) {
     console.error('[TeamMembersRow] Error:', e);
-    alert('Chyba: ' + (e.data?.error || e.message || 'Zkuste to znovu'));
+    useToast().add({ title: 'Chyba při přidávání člena', description: e.data?.error || e.message || 'Zkuste to znovu', color: 'red' });
   }
 }
 
-async function removeMember(email: string) {
-  if (!confirm(`Opravdu chcete odebrat ${email} z týmu?`)) {
-    return;
-  }
+const showRemoveMemberConfirm = ref(false);
+const memberEmailToRemove = ref('');
 
+function removeMember(email: string) {
+  memberEmailToRemove.value = email;
+  showRemoveMemberConfirm.value = true;
+}
+
+async function doRemoveMember() {
+  const email = memberEmailToRemove.value;
+  if (!email) return;
+  showRemoveMemberConfirm.value = false;
+  memberEmailToRemove.value = '';
   const success = await teamMembers.removeTeamMember(props.project.id, email);
-  
   if (success) {
     emit('memberRemoved', email);
-    // Refresh project data
     await firestoreProjects.startListening();
   } else {
-    alert('Nepodařilo se odebrat člena z týmu');
+    useToast().add({ title: 'Nepodařilo se odebrat člena z týmu', color: 'red' });
   }
 }
 </script>

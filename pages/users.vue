@@ -169,6 +169,24 @@
         </template>
       </UCard>
     </UModal>
+
+    <!-- Potvrzení odebrání uživatele -->
+    <UModal v-model="showRemoveUserConfirm">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Odebrat uživatele</h3>
+        </template>
+        <p class="text-gray-600 dark:text-gray-400">
+          Opravdu chcete odebrat <strong>{{ userToRemove?.email }}</strong> ze všech projektů?
+        </p>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="showRemoveUserConfirm = false">Zrušit</UButton>
+            <UButton color="red" @click="doRemoveUser">Odebrat</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
   </div>
 </template>
 
@@ -246,7 +264,7 @@ async function addMember() {
   }
 
   if (!auth.user.value) {
-    alert('Musíte být přihlášeni');
+    useToast().add({ title: 'Musíte být přihlášeni', color: 'red' });
     return;
   }
 
@@ -256,7 +274,8 @@ async function addMember() {
     const projectId = memberForm.value.projectId;
     const project = storeProjects.value?.find((p) => p.id === projectId);
     if (!projectId || !project) {
-      alert('Vyberte projekt');
+      useToast().add({ title: 'Vyberte projekt', color: 'amber' });
+      isSending.value = false;
       return;
     }
 
@@ -300,11 +319,11 @@ async function addMember() {
         toast.add({ title: 'Pozvánka odeslána na ' + memberForm.value.email, color: 'green' });
       }
     } else {
-      alert('Chyba při odesílání pozvánky: ' + (response.error || 'Neznámá chyba'));
+      useToast().add({ title: 'Chyba při odesílání pozvánky', description: response.error || 'Neznámá chyba', color: 'red' });
     }
   } catch (error: any) {
     console.error('[Users] Error sending invitation:', error);
-    alert('Chyba při odesílání pozvánky: ' + (error.message || 'Zkuste to prosím znovu'));
+    useToast().add({ title: 'Chyba při odesílání pozvánky', description: error.message || 'Zkuste to prosím znovu', color: 'red' });
   } finally {
     isSending.value = false;
   }
@@ -316,10 +335,19 @@ function closeModal() {
   memberForm.value.projectId = '';
 }
 
-async function removeUser(user: any) {
-  if (!confirm(`Opravdu chcete odebrat ${user.email}?`)) {
-    return;
-  }
+const showRemoveUserConfirm = ref(false);
+const userToRemove = ref<any>(null);
+
+function removeUser(user: any) {
+  userToRemove.value = user;
+  showRemoveUserConfirm.value = true;
+}
+
+async function doRemoveUser() {
+  const user = userToRemove.value;
+  if (!user) return;
+  showRemoveUserConfirm.value = false;
+  userToRemove.value = null;
 
   const teamMembers = useTeamMembers();
   const toast = useToast();

@@ -219,10 +219,10 @@ const updateProfile = async () => {
   updatingProfile.value = true;
   try {
     await auth.updateDisplayName(profileForm.value.displayName);
-    alert('Profil byl úspěšně aktualizován');
+    useToast().add({ title: 'Profil byl úspěšně aktualizován', color: 'green' });
   } catch (error: any) {
     console.error('[UserProfile] Error updating profile:', error);
-    alert(error.message || 'Chyba při aktualizaci profilu');
+    useToast().add({ title: error.message || 'Chyba při aktualizaci profilu', color: 'red' });
   } finally {
     updatingProfile.value = false;
   }
@@ -252,17 +252,15 @@ const changePassword = async () => {
       confirmPassword: ''
     };
     
-    alert('Heslo bylo úspěšně změněno');
+    useToast().add({ title: 'Heslo bylo úspěšně změněno', color: 'green' });
   } catch (error: any) {
     console.error('[UserProfile] Error changing password:', error);
-    
-    // Handle specific Firebase errors
     if (error.code === 'auth/wrong-password') {
       passwordErrors.value.currentPassword = 'Nesprávné současné heslo';
     } else if (error.code === 'auth/weak-password') {
       passwordErrors.value.newPassword = 'Heslo je příliš slabé';
     } else {
-      alert(error.message || 'Chyba při změně hesla');
+      useToast().add({ title: error.message || 'Chyba při změně hesla', color: 'red' });
     }
   } finally {
     changingPassword.value = false;

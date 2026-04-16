@@ -379,6 +379,22 @@
         </UForm>
       </UCard>
     </UModal>
+
+    <!-- Potvrzení smazání úkolu -->
+    <UModal v-model="showDeleteTaskConfirm">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Smazat úkol</h3>
+        </template>
+        <p class="text-gray-600 dark:text-gray-400">Opravdu chcete smazat tento úkol? Akce je nevratná.</p>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="showDeleteTaskConfirm = false">Zrušit</UButton>
+            <UButton color="red" @click="doDeleteTask">Smazat</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
   </div>
 </template>
 
@@ -401,6 +417,7 @@ const projectsStore = useProjectsStore();
 const scrumBoard = useScrumBoardStore();
 const auth = useAuth();
 const firestoreTasks = useFirestoreTasks();
+const toast = useToast();
 const { sprints, startListening: startSprintsListening, stopListening: stopSprintsListening } = useSprints(computed(() => props.projectId));
 
 const currentProject = computed(() => projectsStore.getProjectById(props.projectId));
@@ -696,15 +713,27 @@ async function updateTask() {
     showEditTaskModal.value = false;
     editingTask.value = null;
   } else {
-    alert('Nepodařilo se uložit změny.');
+    toast.add({ title: 'Nepodařilo se uložit změny', color: 'red' });
   }
 }
 
-async function deleteTask(taskId: string) {
-  if (!confirm('Opravdu chcete smazat tento úkol?')) return;
-  const ok = await firestoreTasks.deleteTask(taskId);
+const showDeleteTaskConfirm = ref(false);
+const taskToDeleteId = ref<string | null>(null);
+
+function deleteTask(taskId: string) {
+  taskToDeleteId.value = taskId;
+  showDeleteTaskConfirm.value = true;
+}
+
+async function doDeleteTask() {
+  if (!taskToDeleteId.value) return;
+  const id = taskToDeleteId.value;
+  showDeleteTaskConfirm.value = false;
+  taskToDeleteId.value = null;
+  selectedTask.value = null;
+  const ok = await firestoreTasks.deleteTask(id);
   if (!ok) {
-    alert('Nepodařilo se smazat úkol.');
+    toast.add({ title: 'Nepodařilo se smazat úkol', color: 'red' });
   }
 }
 
@@ -713,7 +742,7 @@ async function moveTask(taskId: string, newStatus: string) {
   if (ok) {
     scrumBoard.updateTaskStatus(taskId, newStatus);
   } else {
-    alert('Nepodařilo se změnit stav úkolu.');
+    toast.add({ title: 'Nepodařilo se změnit stav úkolu', color: 'red' });
   }
 }
 
@@ -757,7 +786,7 @@ async function handleDrop(event: DragEvent, targetStatus: string) {
   const ok = await firestoreTasks.updateTaskStatus(taskId, targetStatus);
   if (!ok) {
     scrumBoard.updateTaskStatus(taskId, originalStatus);
-    alert('Nepodařilo se změnit stav úkolu.');
+    toast.add({ title: 'Nepodařilo se změnit stav úkolu', color: 'red' });
   }
 }
 

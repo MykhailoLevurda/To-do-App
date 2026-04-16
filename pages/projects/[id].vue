@@ -123,7 +123,7 @@ async function saveEdit() {
     const toast = useToast();
     toast.add({ title: 'Projekt byl upraven', color: 'green' });
   } else {
-    alert('Nepodařilo se uložit změny.');
+    useToast().add({ title: 'Nepodařilo se uložit změny', color: 'red' });
   }
 }
 
@@ -143,7 +143,7 @@ async function deleteProject() {
       toast.add({ title: 'Projekt byl smazán', color: 'green' });
       router.push('/');
     } else {
-      alert('Nepodařilo se smazat projekt.');
+      useToast().add({ title: 'Nepodařilo se smazat projekt', color: 'red' });
     }
   } finally {
     isDeleting.value = false;
