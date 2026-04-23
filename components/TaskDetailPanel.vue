@@ -80,6 +80,24 @@
               <option v-for="m in projectMembers" :key="m.userId" :value="m.userId">{{ m.displayName || m.email }}</option>
             </select>
           </div>
+          <div class="col-span-2">
+            <label class="text-xs font-medium text-gray-500 mb-1.5 block">Štítky</label>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="label in LABEL_PRESETS"
+                :key="label.id"
+                type="button"
+                class="px-2.5 py-1 rounded-full text-xs font-medium border-2 transition-all"
+                :class="editForm.labelIds.includes(label.id)
+                  ? 'border-transparent text-white'
+                  : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 bg-transparent'"
+                :style="editForm.labelIds.includes(label.id) ? { backgroundColor: labelHexColor(label.color) } : {}"
+                @click="toggleLabel(label.id)"
+              >
+                {{ label.name }}
+              </button>
+            </div>
+          </div>
         </section>
 
         <!-- Zobrazení meta (jen v read-only režimu) -->
@@ -426,12 +444,12 @@ const auth = useAuth();
 const firestoreTasks = useFirestoreTasks();
 const scrumBoard = useScrumBoardStore();
 const projectsStore = useProjectsStore();
-const { byId: taskLabelsById } = useTaskLabels();
+const { LABEL_PRESETS, byId: taskLabelsById } = useTaskLabels();
 
 // --- Inline editace ---
 const editMode = ref(false);
 const isSavingEdit = ref(false);
-const editForm = ref({ title: '', description: '', priority: 'medium' as 'low' | 'medium' | 'high', dueDate: '', assigneeId: '', assignee: '', storyPoints: 0 });
+const editForm = ref({ title: '', description: '', priority: 'medium' as 'low' | 'medium' | 'high', dueDate: '', assigneeId: '', assignee: '', storyPoints: 0, labelIds: [] as string[] });
 
 const projectMembers = computed(() => {
   if (!task.value) return [];
@@ -448,13 +466,31 @@ function startEdit() {
     dueDate: task.value.dueDate ? new Date(task.value.dueDate).toISOString().slice(0, 10) : '',
     assigneeId: task.value.assigneeId ?? '',
     assignee: task.value.assignee ?? '',
-    storyPoints: task.value.storyPoints ?? 0
+    storyPoints: task.value.storyPoints ?? 0,
+    labelIds: [...(task.value.labelIds ?? [])]
   };
   editMode.value = true;
 }
 
 function cancelEdit() {
   editMode.value = false;
+}
+
+function toggleLabel(id: string) {
+  const ids = editForm.value.labelIds;
+  const idx = ids.indexOf(id);
+  if (idx === -1) ids.push(id);
+  else ids.splice(idx, 1);
+}
+
+const LABEL_COLOR_MAP: Record<string, string> = {
+  red: '#ef4444', blue: '#3b82f6', orange: '#f97316',
+  gray: '#6b7280', purple: '#8b5cf6', green: '#22c55e',
+  yellow: '#eab308', pink: '#ec4899'
+};
+
+function labelHexColor(color: string): string {
+  return LABEL_COLOR_MAP[color] ?? '#6b7280';
 }
 
 function onEditAssigneeChange() {
@@ -472,7 +508,8 @@ async function saveEdit() {
     storyPoints: editForm.value.storyPoints || undefined,
     assigneeId: editForm.value.assigneeId || undefined,
     assignee: editForm.value.assignee || undefined,
-    dueDate: editForm.value.dueDate ? new Date(editForm.value.dueDate) : undefined
+    dueDate: editForm.value.dueDate ? new Date(editForm.value.dueDate) : undefined,
+    labelIds: editForm.value.labelIds
   };
   const ok = await firestoreTasks.updateTask(task.value.id, updates as any);
   isSavingEdit.value = false;
