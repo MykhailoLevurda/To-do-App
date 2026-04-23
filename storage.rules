@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// Firebase Storage – přílohy úkolů (taskAttachments/{taskId}/{fileId}_name)
+// Přihlášení uživatelé mohou nahrávat a číst soubory v taskAttachments.
+// Ověření, že uživatel je člen projektu úkolu, probíhá na úrovni aplikace (přístup k úkolu).
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /taskAttachments/{taskId}/{fileName} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
