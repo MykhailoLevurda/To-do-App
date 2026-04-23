@@ -193,10 +193,14 @@
 <script setup lang="ts">
 import { UsersIcon } from '@heroicons/vue/24/solid'
 import { storeToRefs } from 'pinia'
+import { doc, getDoc } from 'firebase/firestore'
 
 const auth = useAuth();
 const firestoreProjects = useFirestoreProjects();
 const projectsStore = useProjectsStore();
+const { $firestore } = useNuxtApp() as any;
+
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minut
 
 const { projects: storeProjects, isLoading: storeLoading } = storeToRefs(projectsStore);
 
@@ -377,13 +381,11 @@ async function doRemoveUser() {
 // Načíst uživatele ze všech projektů
 async function loadUsers() {
   isLoading.value = true;
-  
+
   try {
     const allProjects = storeProjects.value ?? [];
-    
     const usersMap = new Map<string, any>();
-    
-    // Shromáždit všechny uživatele ze všech projektů
+
     allProjects.forEach(project => {
       const members = project.teamMembers || [];
       members.forEach((member: any) => {
@@ -394,12 +396,38 @@ async function loadUsers() {
             displayName: member.displayName,
             isPending: member.userId?.startsWith('pending_') || false,
             addedAt: member.addedAt,
-            lastSeen: member.lastSeen
+            lastSeen: null,
+            isOnline: false
           });
         }
       });
     });
-    
+
+    // Pro aktivní (nepending) uživatele načíst jejich lastSeen z Firestore users kolekce
+    const realUsers = Array.from(usersMap.values()).filter(u => !u.isPending && u.id);
+    const docSnaps = await Promise.all(
+      realUsers.map((u: any) => getDoc(doc($firestore, 'users', u.id)).catch(() => null))
+    );
+
+    docSnaps.forEach((snap: any) => {
+      if (!snap || !snap.exists()) return;
+      const data = snap.data();
+      const lastSeen = data.lastSeen?.toDate?.() ?? null;
+      const isOnline = lastSeen ? (Date.now() - lastSeen.getTime() < ONLINE_THRESHOLD_MS) : false;
+
+      for (const [email, user] of usersMap.entries()) {
+        if (user.id === snap.id) {
+          usersMap.set(email, {
+            ...user,
+            displayName: data.displayName || user.displayName,
+            lastSeen,
+            isOnline
+          });
+          break;
+        }
+      }
+    });
+
     usersList.value = Array.from(usersMap.values());
   } catch (error) {
     console.error('[Users] Error loading users:', error);

@@ -55,6 +55,19 @@ export const useAuth = () => {
         await ensureUserDocument(firebaseUser);
       }
     });
+
+    // Periodically update lastSeen every 3 minutes + on tab focus
+    const updateLastSeen = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+      const userRef = doc(firestore, 'users', currentUser.uid);
+      await setDoc(userRef, { lastSeen: serverTimestamp() }, { merge: true });
+    };
+
+    setInterval(updateLastSeen, 3 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) updateLastSeen();
+    });
   } else if (!process.client) {
     loading.value = false;
   }
