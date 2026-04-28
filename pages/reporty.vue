@@ -10,6 +10,8 @@ const scrumBoard = useScrumBoardStore();
 const firestoreTasks = useFirestoreTasks();
 const firestoreProjects = useFirestoreProjects();
 
+
+
 /** Načíst všechny úkoly uživatele (bez filtru projektu) pro report */
 onMounted(() => {
   if (auth.user.value) {
@@ -76,6 +78,86 @@ const priorityCounts = computed(() => ({
   medium: tasks.value.filter((t) => t.priority === 'medium').length,
   low: tasks.value.filter((t) => t.priority === 'low').length
 }));
+
+// ─── Sprint metriky ──────────────────────────────────────────────────────────
+
+const sprintProjectId = ref('');
+watch(projects, (ps) => {
+  if (!sprintProjectId.value && ps.length > 0) sprintProjectId.value = ps[0].id;
+}, { immediate: true });
+
+const { sprints: sprintsList, startListening: startSprintsListening } = useSprints(sprintProjectId);
+watch(sprintProjectId, (id) => { if (id) startSprintsListening(); }, { immediate: true });
+
+const sprintSelectedProject = computed(() => projects.value.find(p => p.id === sprintProjectId.value) ?? null);
+const sprintDoneId = computed(() => sprintSelectedProject.value ? getDoneStatusId(sprintSelectedProject.value) : 'done');
+const sprintProjectTasks = computed(() => tasks.value.filter(t => t.projectId === sprintProjectId.value));
+
+// Velocity – uzavřené sprinty, seřazené chronologicky
+const closedSprintsSorted = computed(() =>
+  [...sprintsList.value]
+    .filter(s => s.status === 'closed')
+    .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+);
+const velocityBars = computed(() =>
+  closedSprintsSorted.value.map(sprint => ({
+    name: sprint.name,
+    sp: sprintProjectTasks.value
+      .filter(t => t.sprintId === sprint.id && t.status === sprintDoneId.value)
+      .reduce((s, t) => s + (t.storyPoints ?? 0), 0)
+  }))
+);
+const avgVelocity = computed(() => {
+  if (!velocityBars.value.length) return 0;
+  return Math.round(velocityBars.value.reduce((s, b) => s + b.sp, 0) / velocityBars.value.length);
+});
+const maxVelocitySP = computed(() => Math.max(1, ...velocityBars.value.map(b => b.sp), avgVelocity.value));
+
+// Burndown – aktivní sprint
+const activeBurndownSprint = computed(() => sprintsList.value.find(s => s.status === 'active') ?? null);
+const burndown = computed(() => {
+  const sprint = activeBurndownSprint.value;
+  if (!sprint) return null;
+  const spTasks = sprintProjectTasks.value.filter(t => t.sprintId === sprint.id);
+  const totalSP = spTasks.reduce((s, t) => s + (t.storyPoints ?? 0), 0);
+  const doneSP = spTasks.filter(t => t.status === sprintDoneId.value).reduce((s, t) => s + (t.storyPoints ?? 0), 0);
+  const remainingSP = totalSP - doneSP;
+  const now = Date.now();
+  const start = sprint.startDate.getTime();
+  const end = sprint.endDate.getTime();
+  const totalDays = Math.max(1, Math.ceil((end - start) / 86400000));
+  const elapsedDays = Math.min(totalDays, Math.max(0, Math.ceil((now - start) / 86400000)));
+  return { sprint, totalSP, doneSP, remainingSP, totalDays, elapsedDays };
+});
+
+// SVG souřadnice – velocity (viewBox 0 0 430 210, graf 40..395 × 10..170)
+const VX1 = 40, VX2 = 395, VY1 = 10, VY2 = 170;
+const velocityBarWidth = computed(() => {
+  const n = velocityBars.value.length;
+  return n ? Math.min(50, (VX2 - VX1) / n - 6) : 0;
+});
+function vBarX(i: number) { return VX1 + (i + 0.5) * (VX2 - VX1) / velocityBars.value.length; }
+function vBarY(sp: number) { return VY2 - (sp / maxVelocitySP.value) * (VY2 - VY1); }
+const velocityAvgY = computed(() => vBarY(avgVelocity.value));
+
+// SVG souřadnice – burndown (viewBox 0 0 430 210, graf 40..395 × 10..170)
+const burndownCoords = computed(() => {
+  const bd = burndown.value;
+  const empty = { idealX1: VX1, idealY1: VY1, idealX2: VX2, idealY2: VY2, cx: VX1, cy: VY2, isAhead: true };
+  if (!bd || bd.totalSP === 0) return empty;
+  const { totalSP, remainingSP, totalDays, elapsedDays } = bd;
+  const toX = (d: number) => VX1 + (d / totalDays) * (VX2 - VX1);
+  const toY = (sp: number) => VY2 - (sp / totalSP) * (VY2 - VY1);
+  const cx = toX(elapsedDays);
+  const cy = toY(remainingSP);
+  const idealAtNow = totalSP * (1 - elapsedDays / totalDays);
+  return {
+    idealX1: VX1, idealY1: toY(totalSP), idealX2: VX2, idealY2: toY(0),
+    cx, cy, isAhead: remainingSP <= idealAtNow
+  };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /** Tabulka po projektech */
 const reportByProject = computed(() => {
@@ -308,8 +390,156 @@ const reportByProject = computed(() => {
           </p>
         </UCard>
 
+        <!-- Sprint metriky -->
+        <UCard class="mt-6">
+          <template #header>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h2 class="text-lg font-semibold">Sprint metriky</h2>
+              <select
+                v-model="sprintProjectId"
+                class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900"
+              >
+                <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </div>
+          </template>
+
+          <div v-if="!projects.length" class="text-center py-8 text-gray-400 text-sm">Žádné projekty.</div>
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+            <!-- Velocity chart -->
+            <div>
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                Velocity <span class="normal-case font-normal">(SP dokončeno za sprint)</span>
+              </h3>
+              <div v-if="!velocityBars.length" class="flex flex-col items-center justify-center py-10 text-gray-400 text-sm gap-2">
+                <span class="i-heroicons-chart-bar w-8 h-8 opacity-30" />
+                Žádné uzavřené sprinty.<br>Velocity se zobrazí po uzavření prvního sprintu.
+              </div>
+              <div v-else>
+                <svg viewBox="0 0 430 210" class="w-full" aria-label="Velocity chart">
+                  <!-- osy -->
+                  <line :x1="VX1" :y1="VY1" :x2="VX1" :y2="VY2" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
+                  <line :x1="VX1" :y1="VY2" :x2="VX2" :y2="VY2" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
+                  <!-- Y popisky -->
+                  <text :x="VX1 - 5" :y="VY2 + 3" text-anchor="end" font-size="10" fill="#9ca3af">0</text>
+                  <text :x="VX1 - 5" :y="(VY1 + VY2) / 2 + 3" text-anchor="end" font-size="10" fill="#9ca3af">{{ Math.round(maxVelocitySP / 2) }}</text>
+                  <text :x="VX1 - 5" :y="VY1 + 3" text-anchor="end" font-size="10" fill="#9ca3af">{{ maxVelocitySP }}</text>
+                  <!-- mřížka -->
+                  <line :x1="VX1" :y1="(VY1 + VY2) / 2" :x2="VX2" :y2="(VY1 + VY2) / 2" stroke="currentColor" stroke-opacity="0.07" stroke-width="1" stroke-dasharray="4 4"/>
+                  <!-- průměrná linie -->
+                  <line v-if="avgVelocity > 0" :x1="VX1" :y1="velocityAvgY" :x2="VX2" :y2="velocityAvgY" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="5 3"/>
+                  <text v-if="avgVelocity > 0" :x="VX2 + 4" :y="velocityAvgY + 4" font-size="9" fill="#8b5cf6">Ø {{ avgVelocity }}</text>
+                  <!-- sloupcové grafy -->
+                  <g v-for="(bar, i) in velocityBars" :key="i">
+                    <rect
+                      :x="vBarX(i) - velocityBarWidth / 2"
+                      :y="vBarY(bar.sp)"
+                      :width="velocityBarWidth"
+                      :height="Math.max(0, VY2 - vBarY(bar.sp))"
+                      fill="#3b82f6" fill-opacity="0.85" rx="3"
+                    />
+                    <text :x="vBarX(i)" :y="vBarY(bar.sp) - 5" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">{{ bar.sp }}</text>
+                    <text :x="vBarX(i)" y="190" text-anchor="middle" font-size="9" fill="#9ca3af">{{ bar.name.length > 9 ? bar.name.slice(0, 9) + '…' : bar.name }}</text>
+                  </g>
+                </svg>
+                <div class="flex items-center gap-4 text-xs text-gray-500 mt-1">
+                  <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-2.5 rounded-sm bg-blue-500"/>&nbsp;SP dokončeno</span>
+                  <span class="flex items-center gap-1.5"><span class="inline-block w-4 border-t-2 border-dashed border-purple-500"/>&nbsp;Průměr ({{ avgVelocity }} SP)</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Burndown chart -->
+            <div>
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                Burndown <span class="normal-case font-normal">(aktivní sprint)</span>
+              </h3>
+              <div v-if="!activeBurndownSprint" class="flex flex-col items-center justify-center py-10 text-gray-400 text-sm gap-2">
+                <span class="i-heroicons-arrow-trending-down w-8 h-8 opacity-30" />
+                Žádný aktivní sprint.<br>Spusťte sprint v záložce Sprinty.
+              </div>
+              <div v-else>
+                <div class="flex gap-4 text-xs text-gray-500 mb-2 flex-wrap">
+                  <span class="font-medium text-gray-700 dark:text-gray-300">{{ activeBurndownSprint.name }}</span>
+                  <span>{{ activeBurndownSprint.startDate.toLocaleDateString('cs-CZ') }} – {{ activeBurndownSprint.endDate.toLocaleDateString('cs-CZ') }}</span>
+                </div>
+                <svg viewBox="0 0 430 210" class="w-full" aria-label="Burndown chart">
+                  <!-- osy -->
+                  <line :x1="VX1" :y1="VY1" :x2="VX1" :y2="VY2" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
+                  <line :x1="VX1" :y1="VY2" :x2="VX2" :y2="VY2" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
+                  <!-- Y popisky -->
+                  <text :x="VX1 - 5" :y="VY2 + 3" text-anchor="end" font-size="10" fill="#9ca3af">0</text>
+                  <text :x="VX1 - 5" :y="VY1 + 3" text-anchor="end" font-size="10" fill="#9ca3af">{{ burndown?.totalSP }}</text>
+                  <!-- X popisky -->
+                  <text :x="VX1" y="190" text-anchor="middle" font-size="9" fill="#9ca3af">Den 0</text>
+                  <text :x="VX2" y="190" text-anchor="end" font-size="9" fill="#9ca3af">Den {{ burndown?.totalDays }}</text>
+                  <!-- ideální linie -->
+                  <line
+                    :x1="burndownCoords.idealX1" :y1="burndownCoords.idealY1"
+                    :x2="burndownCoords.idealX2" :y2="burndownCoords.idealY2"
+                    stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="6 3"
+                  />
+                  <!-- vertikální čára „dnes" -->
+                  <line v-if="burndown"
+                    :x1="burndownCoords.cx" :y1="VY1"
+                    :x2="burndownCoords.cx" :y2="VY2"
+                    stroke="#6b7280" stroke-opacity="0.25" stroke-width="1" stroke-dasharray="3 3"
+                  />
+                  <text v-if="burndown && burndown.elapsedDays > 0 && burndown.elapsedDays < burndown.totalDays"
+                    :x="burndownCoords.cx" y="190" text-anchor="middle" font-size="9" fill="#6b7280"
+                  >{{ burndown.elapsedDays }}</text>
+                  <!-- aktuální bod -->
+                  <circle
+                    :cx="burndownCoords.cx" :cy="burndownCoords.cy" r="7"
+                    :fill="burndownCoords.isAhead ? '#22c55e' : '#ef4444'"
+                  />
+                  <!-- bublina s hodnotou -->
+                  <g v-if="burndown">
+                    <rect
+                      :x="Math.min(burndownCoords.cx - 38, VX2 - 76)"
+                      :y="burndownCoords.cy - 30"
+                      width="76" height="22" rx="4"
+                      :fill="burndownCoords.isAhead ? '#22c55e' : '#ef4444'"
+                      fill-opacity="0.9"
+                    />
+                    <text
+                      :x="Math.min(burndownCoords.cx, VX2 - 38)"
+                      :y="burndownCoords.cy - 14"
+                      text-anchor="middle" font-size="11" font-weight="600" fill="white"
+                    >{{ burndown.remainingSP }} SP zbývá</text>
+                  </g>
+                </svg>
+                <div class="flex items-center gap-4 text-xs text-gray-500 mt-1">
+                  <span class="flex items-center gap-1.5"><span class="inline-block w-4 border-t-2 border-dashed border-gray-400"/>&nbsp;Ideální průběh</span>
+                  <span class="flex items-center gap-1.5">
+                    <span class="inline-block w-2.5 h-2.5 rounded-full" :class="burndownCoords.isAhead ? 'bg-green-500' : 'bg-red-500'"/>
+                    &nbsp;{{ burndownCoords.isAhead ? 'Před plánem' : 'Za plánem' }}
+                  </span>
+                </div>
+                <!-- SP statistiky -->
+                <div class="grid grid-cols-3 gap-3 mt-4 text-center">
+                  <div class="rounded-lg bg-gray-50 dark:bg-gray-800/60 p-2">
+                    <div class="text-xl font-bold">{{ burndown?.totalSP }}</div>
+                    <div class="text-xs text-gray-500">Celkem SP</div>
+                  </div>
+                  <div class="rounded-lg bg-green-50 dark:bg-green-900/20 p-2">
+                    <div class="text-xl font-bold text-green-600 dark:text-green-400">{{ burndown?.doneSP }}</div>
+                    <div class="text-xs text-gray-500">Hotovo SP</div>
+                  </div>
+                  <div class="rounded-lg p-2" :class="burndown && burndown.remainingSP > 0 ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-green-50 dark:bg-green-900/20'">
+                    <div class="text-xl font-bold" :class="burndown && burndown.remainingSP > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'">{{ burndown?.remainingSP }}</div>
+                    <div class="text-xs text-gray-500">Zbývá SP</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </UCard>
+
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-4">
-          Úkoly se načítají z otevřených projektů. Pro plné reporty včetně sprintů otevřete projekt a záložku Sprinty.
+          Úkoly se načítají z otevřených projektů. Pro sprint metriky otevřete projekt a záložku Sprinty.
         </p>
       </template>
     </template>
