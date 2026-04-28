@@ -32,10 +32,7 @@ export const useTeamMembers = () => {
     email: string,
     role: 'admin' | 'member' = 'member'
   ) => {
-    if (!auth.user.value) {
-      console.warn('[Team] Cannot add member - not authenticated');
-      return false;
-    }
+    if (!auth.user.value) return false;
 
     try {
       // Normalizuj email
@@ -57,7 +54,6 @@ export const useTeamMembers = () => {
         
         // Zkontroluj, jestli už není v týmu
         if (existingMembers.some((m: any) => m.email === normalizedEmail)) {
-          console.warn('[Team] Member already in team:', normalizedEmail);
           return false;
         }
       }
@@ -91,7 +87,6 @@ export const useTeamMembers = () => {
         updatedAt: serverTimestamp()
       });
 
-      console.log('[Team] Member added:', normalizedEmail);
       return true;
     } catch (error) {
       console.error('[Team] Error adding member:', error);
@@ -108,10 +103,7 @@ export const useTeamMembers = () => {
       const projectRef = doc(firestore, 'projects', projectId);
       const projectDoc = await getDoc(projectRef);
       
-      if (!projectDoc.exists()) {
-        console.warn('[Team] Project not found:', projectId);
-        return false;
-      }
+      if (!projectDoc.exists()) return false;
 
       const projectData = projectDoc.data();
       const currentMembers = (projectData.teamMembers || []) as TeamMember[];
@@ -129,7 +121,6 @@ export const useTeamMembers = () => {
         pendingInviteEmails: newPendingEmails,
         updatedAt: serverTimestamp()
       });
-      console.log('[Team] Member removed:', email);
       return true;
     } catch (error) {
       console.error('[Team] Error removing member:', error);
@@ -141,10 +132,7 @@ export const useTeamMembers = () => {
    * Aktualizuje seznam členů týmu (používá se když chceme odebrat člena nebo změnit role).
    */
   const updateTeamMembers = async (projectId: string, members: TeamMember[]) => {
-    if (!auth.user.value) {
-      console.warn('[Team] Cannot update members - not authenticated');
-      return false;
-    }
+    if (!auth.user.value) return false;
 
     try {
       const projectRef = doc(firestore, 'projects', projectId);
@@ -157,7 +145,6 @@ export const useTeamMembers = () => {
         updatedAt: serverTimestamp()
       });
 
-      console.log('[Team] Team members updated');
       return true;
     } catch (error) {
       console.error('[Team] Error updating members:', error);
@@ -195,7 +182,6 @@ export const useTeamMembers = () => {
 
       return res.success;
     } catch (e) {
-      console.warn('[Team] acceptProjectInviteViaApi failed, fallback to Firestore:', e);
       const email = fallbackEmail || auth.user.value?.email;
       if (!email) return false;
       return acceptProjectInvite(projectId, email, fallbackRole);
@@ -231,10 +217,7 @@ export const useTeamMembers = () => {
       const pendingIndex = members.findIndex(
         (m) => m.email === normalizedEmail && m.userId?.startsWith('pending_')
       );
-      if (pendingIndex === -1) {
-        console.warn('[Team] No pending invite found for:', normalizedEmail);
-        return false;
-      }
+      if (pendingIndex === -1) return false;
 
       const newMember: TeamMember = {
         userId: realUserId,
@@ -258,7 +241,6 @@ export const useTeamMembers = () => {
         updatedAt: serverTimestamp()
       });
 
-      console.log('[Team] Invite accepted:', normalizedEmail);
       return true;
     } catch (error) {
       console.error('[Team] Error accepting invite:', error);

@@ -3,12 +3,9 @@ import { Resend } from 'resend';
 import { createHmac } from 'node:crypto';
 
 export default defineEventHandler(async (event) => {
-  console.log('[Invite API] Request received', new Date().toISOString());
   try {
     const body = await readBody(event);
     const { email, invitedBy, invitedByName, projectId, projectName, role } = body;
-
-    console.log('[Invite API] Received request:', { email, invitedBy, invitedByName, projectId, projectName });
 
     if (!email || !invitedBy || !projectId) {
       setResponseStatus(event, 400);
@@ -28,13 +25,6 @@ export default defineEventHandler(async (event) => {
       };
     }
 
-    console.log('[Invite API] Sending invitation:', {
-      email,
-      invitedBy,
-      invitedByName,
-      timestamp: new Date().toISOString()
-    });
-
     // Vytvořte pozvánkový token/link
     let inviteToken: string;
     try {
@@ -51,8 +41,6 @@ export default defineEventHandler(async (event) => {
     const appUrl = process.env.NUXT_PUBLIC_APP_URL || process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3001';
     const inviteLink = `${appUrl}/invite/${inviteToken}`;
 
-    console.log('[Invite API] Generated invite link:', inviteLink);
-
     const emailSubject = `Pozvánka do projektu${projectName ? ` ${projectName}` : ''} - Scrum Board`;
     const emailBodyHtml = `
 <p>Pozvánka do projektu</p>
@@ -68,7 +56,6 @@ export default defineEventHandler(async (event) => {
 
     if (hasResendKey) {
       try {
-        console.log('[Invite API] Sending via Resend:', { from: fromFormatted, to: email });
         const resend = new Resend(process.env.RESEND_API_KEY!);
         const { data, error } = await resend.emails.send({
           from: fromFormatted,
@@ -105,7 +92,6 @@ export default defineEventHandler(async (event) => {
             error: 'Chyba při odesílání emailu: ' + (error.message || 'Neznámá chyba')
           };
         }
-        console.log('[Invite API] Email sent successfully:', { to: email, resendId: data?.id, from: fromFormatted });
         setResponseStatus(event, 200);
         return {
           success: true,
@@ -123,11 +109,6 @@ export default defineEventHandler(async (event) => {
     }
 
     // DEMO MODE: Resend API klíč není nastaven
-    console.log('[Invite API] DEMO MODE - RESEND_API_KEY not set. Email would be sent:', {
-      to: email,
-      subject: emailSubject,
-      link: inviteLink
-    });
     setResponseStatus(event, 200);
     return {
       success: true,

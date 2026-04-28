@@ -236,7 +236,6 @@ async function addMember() {
   }
 
   try {
-    console.log('[TeamMembersRow] Calling POST /api/invite', { email: memberForm.value.email, projectId: props.project.id });
     const inviteResponse = await $fetch('/api/invite', {
       method: 'POST',
       body: {

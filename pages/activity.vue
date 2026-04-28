@@ -60,7 +60,6 @@ async function loadActivity() {
       isOwnerView.value = false;
     }
   } catch (e: any) {
-    console.warn('[Activity] load failed:', e);
     error.value = e?.message || 'Nepodařilo se načíst aktivitu. Zkontrolujte oprávnění ve Firestore.';
   } finally {
     loading.value = false;

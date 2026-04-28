@@ -29,9 +29,6 @@ export const useProjectTime = () => {
   const firestore = nuxtApp.$firestore as import('firebase/firestore').Firestore | null;
   const auth = useAuth();
 
-  if (!firestore && import.meta.client) {
-    console.warn('[ProjectTime] Firestore is not available');
-  }
 
   function docId(projectId: string) {
     if (!auth.user.value) return null;
@@ -49,8 +46,7 @@ export const useProjectTime = () => {
       if (!snap.exists()) return 0;
       const data = snap.data();
       return typeof data?.totalSeconds === 'number' ? data.totalSeconds : 0;
-    } catch (e) {
-      console.warn('[ProjectTime] getTotalSeconds failed:', e);
+    } catch {
       return 0;
     }
   };
@@ -76,8 +72,7 @@ export const useProjectTime = () => {
         });
       }
       return true;
-    } catch (e: any) {
-      console.warn('[ProjectTime] addTime failed:', e?.message || e, { projectId, secondsToAdd });
+    } catch {
       return false;
     }
   };
@@ -102,8 +97,7 @@ export const useProjectTime = () => {
           });
       });
       return out;
-    } catch (e) {
-      console.warn('[ProjectTime] getActivityByProjectId failed:', e);
+    } catch {
       return [];
     }
   };
@@ -128,8 +122,7 @@ export const useProjectTime = () => {
           });
       });
       return out;
-    } catch (e) {
-      console.warn('[ProjectTime] getMyActivity failed:', e);
+    } catch {
       return [];
     }
   };

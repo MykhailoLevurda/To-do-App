@@ -1,0 +1,10 @@
+Přidáno zobrazení projektů v levém menu
+
+- Projekty se nyní zobrazují v levém sidebar menu pod odkazem 'Projekty'
+- Aktivní projekty jsou zobrazeny s barevným indikátorem
+- Aktuálně otevřený projekt je zvýrazněn
+- Všechny MVP funkce jsou nyní implementovány
+
+
+
+

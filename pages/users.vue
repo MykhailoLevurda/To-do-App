@@ -283,7 +283,6 @@ async function addMember() {
       return;
     }
 
-    console.log('[Users] Calling POST /api/invite', { email: memberForm.value.email, projectId });
     const response = await $fetch('/api/invite', {
       method: 'POST',
       body: {

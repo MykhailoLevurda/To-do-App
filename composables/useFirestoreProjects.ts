@@ -98,22 +98,15 @@ export const useFirestoreProjects = () => {
   }
 
   const startListening = () => {
-    if (!firestore) {
-      if (import.meta.client) console.warn('[Firestore Projects] Firestore not available (SSR?)');
-      return;
-    }
+    if (!firestore) return;
     if (!auth.isAuthenticated || !auth.user.value) {
-      console.warn('[Firestore Projects] Cannot start listening - not authenticated');
       projectsStore.setLoading(false);
       return;
     }
 
     const userId = auth.user.value.uid;
-    console.log('[Firestore Projects] Starting listener for user:', userId);
-
-    // Set current user and check if we need to clear old data
     projectsStore.setCurrentUserId(userId);
-    
+
     // Try to load from manual cache
     let hasCachedData = false;
     if (process.client) {
@@ -122,8 +115,6 @@ export const useFirestoreProjects = () => {
         if (cached) {
           const cacheData = JSON.parse(cached);
           if (cacheData.currentUserId === userId && cacheData.projects) {
-            console.log('[Firestore Projects] Loading from manual cache:', cacheData.projects.length, 'projects');
-            // Restore projects from cache with proper Date objects
             const cachedProjects = cacheData.projects.map((p: any) => ({
               ...p,
               teamMembers: p.teamMembers?.map((m: any) => ({
@@ -137,23 +128,14 @@ export const useFirestoreProjects = () => {
             hasCachedData = true;
           }
         }
-      } catch (e) {
-        console.warn('[Firestore Projects] Failed to load from cache:', e);
+      } catch {
+        // cache load failed, ignore
       }
     }
-    
-    // Set loading state
-    if (hasCachedData) {
-      console.log('[Firestore Projects] Using cached data while fetching updates');
-      projectsStore.setLoading(false);
-    } else {
-      console.log('[Firestore Projects] No cached data, showing loading state');
-      projectsStore.setLoading(true);
-    }
 
-    // Stop existing listeners if any
+    projectsStore.setLoading(!hasCachedData);
+
     if (unsubscribes.length > 0) {
-      console.log('[Firestore Projects] Stopping previous listeners');
       unsubscribes.forEach((unsub) => unsub());
       unsubscribes = [];
     }
@@ -171,7 +153,6 @@ export const useFirestoreProjects = () => {
       projects.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       projectsStore.setProjects(projects);
       projectsStore.setLoading(false);
-      console.log(`[Firestore Projects] ✅ Projects synced for user ${userId}:`, projects.length, 'projects');
 
       if (process.client) {
         try {
@@ -196,8 +177,8 @@ export const useFirestoreProjects = () => {
             cachedAt: new Date().toISOString()
           };
           localStorage.setItem('projects-cache', JSON.stringify(cacheData));
-        } catch (e) {
-          console.warn('[Firestore Projects] Failed to cache projects:', e);
+        } catch {
+          // cache write failed, ignore
         }
       }
     }
@@ -231,13 +212,10 @@ export const useFirestoreProjects = () => {
     unsubscribes.push(
       onSnapshot(qMember, onMemberSnapshot, onError)
     );
-
-    console.log('[Firestore Projects] Listening: createdBy + memberIds array-contains');
   };
 
   const stopListening = () => {
     if (unsubscribes.length > 0) {
-      console.log('[Firestore Projects] Stopping listeners');
       unsubscribes.forEach((unsub) => unsub());
       unsubscribes = [];
     }
@@ -270,7 +248,6 @@ export const useFirestoreProjects = () => {
       );
       projectsStore.setProjects(projects);
       projectsStore.setLoading(false);
-      console.log('[Firestore Projects] fetchProjectsOnce:', projects.length, 'projects');
       return true;
     } catch (e) {
       console.error('[Firestore Projects] fetchProjectsOnce failed:', e);
@@ -281,7 +258,6 @@ export const useFirestoreProjects = () => {
 
   const addProject = async (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (!auth.user.value) {
-      console.warn('[Firestore Projects] Cannot add project - not authenticated');
       throw new Error('Pro vytvoření projektu se musíte přihlásit.');
     }
 
@@ -310,7 +286,6 @@ export const useFirestoreProjects = () => {
         updatedAt: serverTimestamp()
       });
 
-      console.log('[Firestore Projects] Project added:', docRef.id);
       return docRef.id;
     } catch (error) {
       console.error('[Firestore Projects] Error adding project:', error);
@@ -319,10 +294,7 @@ export const useFirestoreProjects = () => {
   };
 
   const updateProject = async (projectId: string, updates: Partial<Project>) => {
-    if (!auth.user.value) {
-      console.warn('[Firestore Projects] Cannot update project - not authenticated');
-      return false;
-    }
+    if (!auth.user.value) return false;
 
     try {
       const projectRef = doc(firestore, 'projects', projectId);
@@ -330,8 +302,6 @@ export const useFirestoreProjects = () => {
         ...updates,
         updatedAt: serverTimestamp()
       });
-
-      console.log('[Firestore Projects] Project updated:', projectId);
       return true;
     } catch (error) {
       console.error('[Firestore Projects] Error updating project:', error);
@@ -340,30 +310,21 @@ export const useFirestoreProjects = () => {
   };
 
   const deleteProject = async (projectId: string) => {
-    if (!auth.user.value) {
-      console.warn('[Firestore Projects] Cannot delete project - not authenticated');
-      return false;
-    }
+    if (!auth.user.value) return false;
 
     try {
-      // First, delete all tasks associated with this project
       const tasksRef = collection(firestore, 'tasks');
       const tasksQuery = query(tasksRef, where('projectId', '==', projectId));
       const tasksSnapshot = await getDocs(tasksQuery);
-      
-      const deleteTaskPromises = [];
+
+      const deleteTaskPromises: Promise<void>[] = [];
       tasksSnapshot.forEach((taskDoc) => {
         deleteTaskPromises.push(deleteDoc(taskDoc.ref));
       });
-      
       await Promise.all(deleteTaskPromises);
-      console.log('[Firestore Projects] Deleted', deleteTaskPromises.length, 'tasks for project:', projectId);
-      
-      // Then delete the project itself
+
       const projectRef = doc(firestore, 'projects', projectId);
       await deleteDoc(projectRef);
-
-      console.log('[Firestore Projects] Project deleted:', projectId);
       return true;
     } catch (error) {
       console.error('[Firestore Projects] Error deleting project:', error);
