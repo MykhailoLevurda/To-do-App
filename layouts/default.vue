@@ -4,6 +4,8 @@ import {
   UsersIcon,
   ChartBarIcon,
   ClockIcon,
+  QuestionMarkCircleIcon,
+  InformationCircleIcon,
 } from '@heroicons/vue/24/outline'
 
 const auth = useAuth()
@@ -169,8 +171,8 @@ onBeforeUnmount(() => {
     <AuthModal v-model="showAuthModal" />
     <UserProfileModal v-model="showUserProfileModal" />
     <div class="min-h-screen grid grid-cols-[260px_1fr]">
-      <aside class="border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-4 flex flex-col justify-between">
-      <div>
+      <aside class="border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-4 flex flex-col h-screen sticky top-0">
+      <div class="flex-1 overflow-y-auto">
         <NuxtLink to="/" class="block mb-6">
           <h1 class="font-bold text-lg hover:text-primary transition-colors cursor-pointer">
             Scrum Board
@@ -234,6 +236,26 @@ onBeforeUnmount(() => {
             </NuxtLink>
           </nav>
 
+      </div>
+
+      <!-- Bottom links (visible to all) -->
+      <div class="flex flex-col gap-1 pt-2 border-t border-gray-200 dark:border-gray-800 mt-2">
+        <NuxtLink
+          to="/support"
+          class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors text-sm"
+          :class="route.path === '/support' ? 'bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 font-medium' : 'text-gray-500 dark:text-gray-400'"
+        >
+          <QuestionMarkCircleIcon class="w-4 h-4" />
+          Podpora
+        </NuxtLink>
+        <NuxtLink
+          to="/o-nas"
+          class="flex items-center gap-2 text-left px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors text-sm"
+          :class="route.path === '/o-nas' ? 'bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 font-medium' : 'text-gray-500 dark:text-gray-400'"
+        >
+          <InformationCircleIcon class="w-4 h-4" />
+          O aplikaci
+        </NuxtLink>
       </div>
     </aside>
       <main class="flex flex-col">
